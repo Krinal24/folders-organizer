@@ -50,7 +50,7 @@ def scan_downloads(downloads_path: str) -> dict[str, Any]:
 
     files = [
         file
-        for file in path.iterdir()
+        for file in path.rglob("*")
         if file.is_file()
     ]
 
@@ -64,6 +64,7 @@ def scan_downloads(downloads_path: str) -> dict[str, Any]:
 
         file_details.append({
             "name": file.name,
+            "relative_path": str(file.relative_to(path)),
             "extension": file.suffix.lower(),
             "category": category,
             "size": file.stat().st_size
