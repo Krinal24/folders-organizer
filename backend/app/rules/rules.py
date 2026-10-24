@@ -27,6 +27,16 @@ COPY_MARKER = re.compile(
 
 PARTIAL_HASH_BYTES = 64 * 1024
 
+# Types whose destination needs no judgement. Documents and images are
+# left to the AI, which picks a subfolder from the name.
+TYPE_DESTINATIONS = {
+    "videos": "Videos",
+    "audio": "Music",
+    "archives": "Archives",
+    "executables": "Installers",
+    "projects": "Projects",
+}
+
 
 def _hash_file(path: Path, limit: int | None = None) -> str | None:
     digest = hashlib.sha256()
@@ -106,11 +116,15 @@ def find_duplicates(root: Path, items: list[dict[str, Any]]) -> list[dict[str, A
     return suggestions
 
 
-def _suggestion(item, rule, confidence, reason, duplicate_of=None):
+def _suggestion(
+    item, rule, confidence, reason,
+    duplicate_of=None, action="delete", destination=None,
+):
     return {
         "relative_path": item["relative_path"],
         "kind": item["kind"],
-        "action": "delete",
+        "action": action,
+        "destination": destination,
         "category": item.get("category"),
         "confidence": confidence,
         "reason": reason,
@@ -119,6 +133,16 @@ def _suggestion(item, rule, confidence, reason, duplicate_of=None):
         "duplicate_of": duplicate_of,
         "size": item.get("size", 0),
     }
+
+
+def _describe_age(seconds: float) -> str:
+    days = int(seconds // DAY)
+    if days >= 365:
+        years = days // 365
+        return f"over {years} year{'s' if years > 1 else ''}"
+    if days >= 60:
+        return f"{days // 30} months"
+    return f"{days} days"
 
 
 def _single_file_rule(item: dict[str, Any], now: float) -> dict[str, Any] | None:
@@ -148,18 +172,34 @@ def _single_file_rule(item: dict[str, Any], now: float) -> dict[str, Any] | None
         )
 
     if extension in INSTALLER_SUFFIXES and age > INSTALLER_MIN_AGE:
-        days = int(age // DAY)
         return _suggestion(
             item,
             rule="old_installer",
             confidence=0.7,
-            reason=(
-                f"Installer downloaded {days} days ago. "
-                "If the app is already installed, this can go."
-            ),
+            reason=f"Downloaded {_describe_age(age)} ago.",
         )
 
     return None
+
+
+def _file_type_rule(item: dict[str, Any]) -> dict[str, Any] | None:
+    destination = TYPE_DESTINATIONS.get(item["category"])
+    if destination is None:
+        return None
+
+    parent = Path(item["relative_path"]).parent.as_posix().lower()
+    if parent == destination.lower() or parent.startswith(destination.lower() + "/"):
+        return None
+
+    label = "project" if item["kind"] == "folder" else item["category"].rstrip("s")
+    return _suggestion(
+        item,
+        rule="file_type",
+        confidence=0.9,
+        reason=f"Group with other {label} files in {destination}.",
+        action="move",
+        destination=destination,
+    )
 
 
 def apply_rules(
@@ -178,7 +218,7 @@ def apply_rules(
     for item in scan["items"]:
         if item["relative_path"] in suggestions:
             continue
-        suggestion = _single_file_rule(item, now)
+        suggestion = _single_file_rule(item, now) or _file_type_rule(item)
         if suggestion:
             suggestions[item["relative_path"]] = suggestion
 

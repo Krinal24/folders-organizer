@@ -3,8 +3,9 @@ from typing import Any, Callable, Iterator
 
 from app.ai.analyzer import AIAnalyzer, is_safe_destination
 from app.ai.factory import get_analyzer
+from app.ai.prompts import CATEGORY_GROUP, GROUPS, existing_folders
 from app.models.plan_schemas import Suggestion
-from app.rules.rules import apply_rules
+from app.rules.rules import TYPE_DESTINATIONS, apply_rules
 from app.scanner.scanner import scan_folder
 
 
@@ -21,7 +22,7 @@ def stream_plan(
     Scan and apply rules immediately (so bad paths raise before streaming),
     then return an iterator of events:
 
-      {"type": "rules", "path", "suggestions", "ai_pending"}
+      {"type": "rules", "path", "suggestions", "destinations", "ai_pending"}
       {"type": "ai", "suggestion"}        one per AI result, as it arrives
       {"type": "error", "message"}        the AI failed; earlier results stand
       {"type": "done", "ai_used"}
@@ -33,10 +34,12 @@ def stream_plan(
     rule_suggestions = apply_rules(root, scan)
     handled = {suggestion["relative_path"] for suggestion in rule_suggestions}
 
+    # Only types whose folder depends on the name need the AI.
     remaining = {
         item["relative_path"]: item
         for item in scan["items"]
         if item["relative_path"] not in handled
+        and item["category"] in CATEGORY_GROUP
     }
     run_ai = use_ai and bool(remaining)
 
@@ -45,6 +48,7 @@ def stream_plan(
             "type": "rules",
             "path": scan["path"],
             "suggestions": [_validated(s) for s in rule_suggestions],
+            "destinations": _destinations(scan["items"]),
             "ai_pending": len(remaining) if run_ai else 0,
         }
 
@@ -94,6 +98,14 @@ def build_plan(
         if suggestion["action"] == "delete"
     )
     return result
+
+
+def _destinations(items: list[dict[str, Any]]) -> list[str]:
+    """Every folder the user can pick when overriding a suggestion."""
+    paths = set(TYPE_DESTINATIONS.values())
+    paths |= {path for group in GROUPS.values() for _, path, _ in group["folders"]}
+    paths |= {path for _, path, _ in existing_folders(items)}
+    return sorted(paths, key=str.lower)
 
 
 def _validated(suggestion: dict[str, Any]) -> dict[str, Any]:
