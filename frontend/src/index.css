@@ -863,3 +863,147 @@ h1 {
     font-size: 25px;
   }
 }
+
+/* Organize / History tabs */
+
+.view-tabs {
+  display: inline-flex;
+  margin-top: 20px;
+  padding: 3px;
+  background: #ececea;
+  border-radius: 10px;
+}
+
+.view-tabs button {
+  padding: 8px 18px;
+  background: transparent;
+  color: #525252;
+  border: 0;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.view-tabs button.active {
+  background: white;
+  color: #171717;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.08);
+}
+
+/* History */
+
+.history-empty {
+  color: #737373;
+  font-size: 14px;
+}
+
+.history-list {
+  display: grid;
+  gap: 12px;
+}
+
+.run-card {
+  display: grid;
+  gap: 10px;
+  /* Grid tracks default to their content's width; long paths must shrink. */
+  grid-template-columns: minmax(0, 1fr);
+  min-width: 0;
+  padding: 18px 20px;
+  background: white;
+  border: 1px solid #e5e5e5;
+  border-radius: 14px;
+}
+
+.run-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.run-title {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.run-folder {
+  overflow: hidden;
+  color: #737373;
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.run-status {
+  flex-shrink: 0;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.status-done { background: #e0f2e7; color: #17633a; }
+.status-stopped { background: #fff0cf; color: #825500; }
+.status-undone { background: #e8e8e8; color: #404040; }
+
+.run-summary,
+.run-message {
+  margin: 0;
+  color: #404040;
+  font-size: 14px;
+}
+
+.run-message {
+  color: #17633a;
+}
+
+.run-actions,
+.run-confirm {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  font-size: 14px;
+}
+
+.run-actions .secondary-button,
+.run-confirm .primary-button {
+  padding: 9px 14px;
+  font-size: 13px;
+}
+
+.run-entries {
+  max-height: 280px;
+  margin: 0;
+  padding: 10px 12px;
+  overflow-y: auto;
+  background: #fafafa;
+  border-radius: 10px;
+  list-style: none;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+.run-entries li {
+  padding: 3px 0;
+}
+
+.entry-op {
+  display: inline-block;
+  min-width: 58px;
+  margin-right: 8px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.op-move { color: #2f8a57; }
+.op-delete { color: #c62828; }
+
+.entry-arrow {
+  color: #a3a3a3;
+}
+

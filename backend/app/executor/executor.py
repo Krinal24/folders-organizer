@@ -95,27 +95,41 @@ def execute_plan(
 
     def events():
         journal_id = f"{time.strftime('%Y%m%d-%H%M%S')}-{uuid.uuid4().hex[:8]}"
-        journal = {"root": str(root), "created": time.time(), "entries": [], "created_dirs": []}
+        journal = {
+            "root": str(root),
+            "created": time.time(),
+            "finished": None,
+            "completed": False,
+            "entries": [],
+            "created_dirs": [],
+        }
         counts = {"done": 0, "skipped": 0, "failed": 0}
         freed = 0
 
-        yield {"type": "started", "journal_id": journal_id, "total": len(operations)}
+        try:
+            yield {"type": "started", "journal_id": journal_id, "total": len(operations)}
 
-        for operation in _order(operations):
-            result = _apply(root, operation, trash, journal)
-            counts[result["status"]] += 1
-            if result["status"] == "done":
+            for operation in _order(operations):
+                result = _apply(root, operation, trash, journal)
+                counts[result["status"]] += 1
+                if result["status"] == "done":
+                    _save_journal(journal_id, journal)
+                    if operation["action"] == "delete":
+                        freed += operation.get("size") or 0
+                yield {"type": "result", **result}
+
+            journal["completed"] = True
+            yield {
+                "type": "done",
+                **counts,
+                "freed": freed,
+                "journal_id": journal_id if journal["entries"] else None,
+            }
+        finally:
+            # Also runs when the client stops the run halfway.
+            if journal["entries"]:
+                journal["finished"] = time.time()
                 _save_journal(journal_id, journal)
-                if operation["action"] == "delete":
-                    freed += operation.get("size") or 0
-            yield {"type": "result", **result}
-
-        yield {
-            "type": "done",
-            **counts,
-            "freed": freed,
-            "journal_id": journal_id if journal["entries"] else None,
-        }
 
     return events()
 
@@ -150,7 +164,11 @@ def _apply(root, operation, trash, journal) -> dict[str, Any]:
             if operation.get("rule") == "empty_folder" and any(source.iterdir()):
                 return result("skipped", "Folder is no longer empty.")
             trash(str(source))
-            journal["entries"].append({"op": "delete", "path": relative_path})
+            journal["entries"].append({
+                "op": "delete",
+                "path": relative_path,
+                "size": operation.get("size") or 0,
+            })
             return result("done", "Moved to the Recycle Bin.")
 
         destination = operation.get("destination")
@@ -203,27 +221,81 @@ def _save_journal(journal_id: str, journal) -> None:
     os.replace(temporary, folder / f"{journal_id}.json")
 
 
+class AlreadyUndone(Exception):
+    pass
+
+
+def _journal_file(journal_id: str) -> Path:
+    if not JOURNAL_ID.match(journal_id):
+        raise ValueError("Invalid run id.")
+    journal_file = journal_dir() / f"{journal_id}.json"
+    if not journal_file.exists():
+        raise FileNotFoundError("No record of this run.")
+    return journal_file
+
+
+def _summary(journal_id: str, journal: dict[str, Any]) -> dict[str, Any]:
+    moves = [e for e in journal["entries"] if e["op"] == "move"]
+    deletes = [e for e in journal["entries"] if e["op"] == "delete"]
+    return {
+        "id": journal_id,
+        "root": journal["root"],
+        "created": journal["created"],
+        "finished": journal.get("finished"),
+        # Older journals predate this flag; treat them as complete.
+        "completed": journal.get("completed", True),
+        "moved": len(moves),
+        "deleted": len(deletes),
+        "freed": sum(e.get("size", 0) for e in deletes),
+        "undone": journal.get("undone"),
+        "can_undo": bool(moves) and not journal.get("undone"),
+    }
+
+
+def list_runs() -> list[dict[str, Any]]:
+    """Every recorded run, newest first."""
+    folder = journal_dir()
+    if not folder.exists():
+        return []
+
+    runs = []
+    for journal_file in folder.glob("*.json"):
+        try:
+            journal = json.loads(journal_file.read_text(encoding="utf-8"))
+            runs.append(_summary(journal_file.stem, journal))
+        except (OSError, ValueError, KeyError):
+            continue  # A damaged journal shouldn't hide the others.
+    return sorted(runs, key=lambda run: run["created"], reverse=True)
+
+
+def get_run(journal_id: str) -> dict[str, Any]:
+    journal = json.loads(_journal_file(journal_id).read_text(encoding="utf-8"))
+    return {**_summary(journal_id, journal), "entries": journal["entries"]}
+
+
 def undo(journal_id: str) -> dict[str, Any]:
     """Move files back and remove folders the run created, if still empty.
 
-    Deleted files can't be restored automatically; they are in the Recycle Bin.
+    Deleted files can't be restored automatically; they are in the Recycle
+    Bin. The run stays in the history, marked as undone.
     """
-    if not JOURNAL_ID.match(journal_id):
-        raise ValueError("Invalid journal id.")
-    journal_file = journal_dir() / f"{journal_id}.json"
-    if not journal_file.exists():
-        raise FileNotFoundError("Nothing to undo for this run.")
-
+    journal_file = _journal_file(journal_id)
     journal = json.loads(journal_file.read_text(encoding="utf-8"))
-    root = Path(journal["root"])
+    if journal.get("undone"):
+        raise AlreadyUndone("This run has already been undone.")
+
+    root = Path(journal["root"]).resolve()
     restored = 0
     problems = []
 
     for entry in reversed(journal["entries"]):
         if entry["op"] != "move":
             continue
-        current = root / entry["to"]
-        original = root / entry["from"]
+        current = (root / entry["to"]).resolve()
+        original = (root / entry["from"]).resolve()
+        if not (_inside(root, current) and _inside(root, original)):
+            problems.append(f"{entry['from']}: outside the folder, skipped")
+            continue
         if not current.exists():
             problems.append(f"{entry['to']}: no longer there")
             continue
@@ -243,9 +315,8 @@ def undo(journal_id: str) -> dict[str, Any]:
         except OSError:
             pass
 
-    journal_file.unlink()
-    return {
-        "restored": restored,
-        "problems": problems,
-        "in_recycle_bin": sum(1 for e in journal["entries"] if e["op"] == "delete"),
-    }
+    deleted = sum(1 for e in journal["entries"] if e["op"] == "delete")
+    journal["undone"] = {"at": time.time(), "restored": restored, "problems": problems}
+    _save_journal(journal_id, journal)
+
+    return {"restored": restored, "problems": problems, "in_recycle_bin": deleted}
