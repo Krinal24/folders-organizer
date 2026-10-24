@@ -24,7 +24,7 @@ def journal_dir() -> Path:
     if override:
         return Path(override)
     base = os.getenv("LOCALAPPDATA") or Path.home() / ".local" / "share"
-    return Path(base) / "FolderOrganizer" / "journals"
+    return Path(base) / "TidyByte" / "journals"
 
 
 def _resolve_root(folder_path: str) -> Path:

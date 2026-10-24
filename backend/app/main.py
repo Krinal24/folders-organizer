@@ -8,8 +8,8 @@ from app.api.routes import router  # noqa: E402
 
 
 app = FastAPI(
-    title="DownloadMind",
-    description="AI-powered Downloads folder organizer",
+    title="TidyByte",
+    description="AI-powered folder organizer",
     version="0.1.0"
 )
 

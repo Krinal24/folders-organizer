@@ -130,6 +130,12 @@ h1 {
   letter-spacing: -0.03em;
 }
 
+.results-note {
+  margin: 6px 0 0;
+  color: #737373;
+  font-size: 14px;
+}
+
 .folder-location {
   max-width: 50%;
   margin: 0;
