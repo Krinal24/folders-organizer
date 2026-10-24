@@ -43,6 +43,7 @@ class ScanResult(BaseModel):
     sizes: dict[str, int]
     items: list[ScannedItem]
     skipped: list[SkippedPath]
+    empty_folders: list[str]
     truncated: bool
 
 

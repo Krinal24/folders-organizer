@@ -122,6 +122,7 @@ def scan_folder(folder_path: str) -> dict[str, Any]:
 
     items = []
     skipped = []
+    empty_folders = []
     truncated = False
     stack = [root]
 
@@ -137,6 +138,9 @@ def scan_folder(folder_path: str) -> dict[str, Any]:
                 "reason": error.strerror or type(error).__name__,
             })
             continue
+
+        if not entries and current != root:
+            empty_folders.append(str(current.relative_to(root)))
 
         for entry in entries:
             if len(items) >= MAX_ITEMS:
@@ -223,5 +227,6 @@ def scan_folder(folder_path: str) -> dict[str, Any]:
         "sizes": dict(sizes),
         "items": items,
         "skipped": skipped,
+        "empty_folders": empty_folders,
         "truncated": truncated,
     }
