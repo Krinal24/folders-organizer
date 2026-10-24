@@ -2,7 +2,7 @@
 import { useRef, useState } from "react";
 import "./index.css";
 import PlanView from "./PlanView.jsx";
-import { formatBytes } from "./format.js";
+import { formatBytes, plural } from "./format.js";
 import { API_URL, readNdjson } from "./api.js";
 
 const CATEGORIES = [
@@ -193,9 +193,10 @@ function App() {
               <div>
                 <p className="eyebrow">FOLDER ANALYSIS</p>
                 <h2>
-                  {scanResult.total_files} files &middot;{" "}
+                  {plural(scanResult.total_items, "item")} &middot;{" "}
                   {formatBytes(scanResult.total_size)}
                 </h2>
+                <ProjectNote items={scanResult.items} />
               </div>
 
               <p className="folder-location">{scanResult.path}</p>
@@ -331,6 +332,20 @@ function App() {
         )}
       </section>
     </main>
+  );
+}
+
+// Projects are counted as one item each; say how many files they hold.
+function ProjectNote({ items }) {
+  const projects = items.filter((item) => item.kind === "folder");
+  if (projects.length === 0) return null;
+
+  const files = projects.reduce((total, item) => total + (item.file_count || 0), 0);
+  return (
+    <p className="results-note">
+      Includes {plural(projects.length, "code project")} with{" "}
+      {files.toLocaleString()} files inside, kept together as one item each.
+    </p>
   );
 }
 
