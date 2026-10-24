@@ -16,10 +16,12 @@ GROUPS = {
             ("finance", "Documents/Finance", "invoices, receipts, bills, fee payments, bank statements, tax"),
             ("personal", "Documents/Personal", "IDs, certificates, tickets, application forms, acknowledgement slips"),
         ],
+        "decoy": "untitled.txt",
         "examples": [
             ("Krinal_Resume.pdf", "resumes", 9, "resume in name"),
             ("Invoice_March.pdf", "finance", 9, "invoice"),
             ("21CS42 Module 3 notes.pdf", "study", 9, "course notes"),
+            ("DOC-20221021-WA0004.pdf | text: Income Tax Department Form 16 Certificate", "finance", 9, "tax form per text"),
             ("83a91f2e.pdf", "docs", 5, "unclear name"),
         ],
     },
@@ -29,6 +31,7 @@ GROUPS = {
             ("photos", "Images/Photos", "camera photos: IMG_, DSC_, PXL_, WhatsApp Image, dates"),
             ("screenshots", "Images/Screenshots", "names containing Screenshot or Screen Shot"),
         ],
+        "decoy": "untitled.png",
         "examples": [
             ("IMG_2041.jpg", "photos", 9, "camera photo"),
             ("Screenshot 2024-01-02.png", "screenshots", 9, "screenshot"),
@@ -37,6 +40,12 @@ GROUPS = {
         ],
     },
 }
+
+# Small models pull whichever item comes first toward the first folder in
+# the list. Item 1 is therefore a throwaway decoy whose right answer *is*
+# the first (catch-all) folder; real items start at FIRST_ID and the
+# decoy's answer is ignored.
+FIRST_ID = 2
 
 # Files of unknown type are judged against the document folders.
 CATEGORY_GROUP = {"documents": "documents", "images": "images", "unknown": "documents"}
@@ -53,6 +62,7 @@ review: only if the item cannot be placed at all
 
 Rules:
 - Read the name carefully; it is your main clue.
+- Some items include "text:", the start of the file itself. When present, it shows what the file really is; trust it over the name.
 - Answer only with a label from the list above.
 - If an existing folder clearly fits, choose it.
 - review is rare: almost every item belongs in a folder.
@@ -105,14 +115,16 @@ def build_system_prompt(group: str, folders: list[tuple[str, str, str]]) -> str:
     )
 
 
-def build_batch_prompt(batch: list[dict[str, Any]]) -> str:
-    lines = []
+def build_batch_prompt(batch: list[dict[str, Any]], decoy: str) -> str:
+    lines = [f"1 | {decoy}"]
 
-    for number, file in enumerate(batch, start=1):
+    for number, file in enumerate(batch, start=FIRST_ID):
         line = f"{number} | {file['name']}"
         parent = parent_folder(file["relative_path"])
         if parent:
             line += f" | in {parent}"
+        if file.get("snippet"):
+            line += f" | text: {file['snippet']}"
         lines.append(line)
 
     return "Items:\n" + "\n".join(lines)

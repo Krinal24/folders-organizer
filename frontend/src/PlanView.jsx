@@ -438,6 +438,14 @@ function PlanRow({ item, folderOptions, onChoose, onUndo, locked, result }) {
 
       <span className="row-meta">
         {item.kind === "file" && formatBytes(item.size)}
+        {item.used_content && !item.overridden && (
+          <span
+            className="row-tag"
+            title="The AI read the start of this file, not just its name"
+          >
+            read text
+          </span>
+        )}
         {item.source === "ai" && !item.overridden && (
           <span
             className="row-confidence"

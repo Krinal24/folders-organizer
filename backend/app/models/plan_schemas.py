@@ -12,6 +12,7 @@ RuleName = Literal[
     "old_installer",
     "empty_folder",
     "file_type",
+    "unclear_document",
 ]
 
 
@@ -32,11 +33,15 @@ class Suggestion(BaseModel):
     size: int
     # Lets the executor detect files that changed after the analysis.
     modified: float | None = None
+    # The AI saw the start of the file's text, not just its name.
+    used_content: bool = False
 
 
 class AnalyzeRequest(BaseModel):
     path: str
     use_ai: bool = True
+    # Let the AI read the start of documents whose names are unclear.
+    read_contents: bool = True
 
 
 class Operation(BaseModel):

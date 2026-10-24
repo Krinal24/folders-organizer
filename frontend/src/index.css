@@ -570,6 +570,26 @@ h1 {
   font-size: 13px;
 }
 
+.row-tag {
+  padding: 2px 7px;
+  background: #e8f0fb;
+  color: #2f6fb0;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.ai-toggle-sub {
+  margin-top: -4px;
+  padding-left: 26px;
+  color: #b5b5b5;
+  font-size: 13px;
+}
+
+.ai-toggle-sub:has(input:disabled) {
+  opacity: 0.5;
+}
+
 .row-confidence {
   padding: 2px 7px;
   background: #f0f0f0;

@@ -25,6 +25,7 @@ function App() {
   const [loading, setLoading] = useState(false);
   const [analyzing, setAnalyzing] = useState(false);
   const [useAi, setUseAi] = useState(true);
+  const [readContents, setReadContents] = useState(true);
 
   const [error, setError] = useState("");
   const [analysisError, setAnalysisError] = useState("");
@@ -91,6 +92,7 @@ function App() {
         body: JSON.stringify({
           path: scanResult.path,
           use_ai: useAi,
+          read_contents: readContents,
         }),
         signal: controller.signal,
       });
@@ -256,6 +258,17 @@ function App() {
                   disabled={analyzing}
                 />
                 Use AI for the remaining files (slower)
+              </label>
+
+              <label className="ai-toggle ai-toggle-sub">
+                <input
+                  type="checkbox"
+                  checked={useAi && readContents}
+                  onChange={(event) => setReadContents(event.target.checked)}
+                  disabled={analyzing || !useAi}
+                />
+                Let the AI read the first lines of documents with unclear
+                names, like “DOC-2022…pdf”
               </label>
 
               <button

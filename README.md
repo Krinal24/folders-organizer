@@ -14,7 +14,9 @@ adjust every suggestion, and only then applies the changes, with undo.
    music, archives and installers by type.
 3. **AI**: documents and images are sorted into folders such as
    `Documents/Study` or `Images/Screenshots` by an LLM, in batches, with
-   results streamed to the UI as they arrive.
+   results streamed to the UI as they arrive. For documents with unclear names
+   (`DOC-2022…pdf`, `83a91f2e.pdf`) the AI also gets the first ~200
+   characters of their text (PDF, DOCX, PPTX, XLSX, TXT), read locally.
 4. **Review**: change any suggestion: move elsewhere, keep, or delete.
 5. **Apply**: every change is re-checked against the disk first. Nothing is
    overwritten, deletes go to the Recycle Bin, and moves can be undone.
@@ -65,6 +67,7 @@ Open http://localhost:5173, paste a folder path, and scan.
 | `AI_PROVIDER` | `ollama` | `ollama` or `huggingface` |
 | `OLLAMA_MODEL` | `gemma3:4b` | Local model to use |
 | `AI_BATCH_SIZE` | `40` | Files per AI request |
+| `AI_READ_CONTENTS` | `unclear` | Read document text for the AI: `unclear` names only, `all`, or `off` |
 | `HF_API_TOKEN` | | Needed for `huggingface` |
 | `HF_MODEL` | `Qwen/Qwen3-4B-Instruct-2507` | Hugging Face model |
 | `JOURNAL_DIR` | `%LOCALAPPDATA%\TidyByte\journals` | Where undo journals are kept |

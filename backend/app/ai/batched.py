@@ -6,6 +6,7 @@ from typing import Any, Iterator, get_args
 from app.ai.analyzer import AIAnalyzer
 from app.ai.prompts import (
     CATEGORY_GROUP,
+    FIRST_ID,
     GROUPS,
     build_batch_prompt,
     build_system_prompt,
@@ -20,6 +21,9 @@ DEFAULT_BATCH_SIZE = 40
 
 # Confidence 1-9 from the model; at or below this, ask the user to review.
 REVIEW_BELOW = 4
+
+# Reason to show when the model leaves it out.
+DEFAULT_REASON = "Suggested by the AI."
 
 # Confidence to assume when the model leaves it out.
 DEFAULT_CONFIDENCE = 6
@@ -75,15 +79,16 @@ class BatchedAnalyzer(AIAnalyzer):
         for group, group_files in groups.items():
             folders = GROUPS[group]["folders"] + existing
             system = build_system_prompt(group, folders)
+            decoy = GROUPS[group]["decoy"]
 
             for start in range(0, len(group_files), self.batch_size):
                 batch = group_files[start:start + self.batch_size]
-                yield from self._analyze_batch(system, folders, batch)
+                yield from self._analyze_batch(system, folders, batch, decoy)
 
-    def _analyze_batch(self, system, folders, batch, retry=True):
+    def _analyze_batch(self, system, folders, batch, decoy, retry=True):
         chunks = self._stream_completion(
             system,
-            build_batch_prompt(batch),
+            build_batch_prompt(batch, decoy),
             max_tokens=len(batch) * OUTPUT_TOKENS_PER_ITEM,
         )
         destinations = {label: path for label, path, _ in folders}
@@ -102,7 +107,7 @@ class BatchedAnalyzer(AIAnalyzer):
 
         if missing and retry:
             # A fresh, smaller request usually gets these right.
-            yield from self._analyze_batch(system, folders, missing, retry=False)
+            yield from self._analyze_batch(system, folders, missing, decoy, retry=False)
         else:
             for file in missing:
                 yield review_fallback(file, "The AI didn't give a usable answer.")
@@ -114,7 +119,8 @@ def _parse_line(line, batch_size, destinations):
     if not match:
         return None
 
-    index = int(match.group(1)) - 1
+    # The decoy (id 1) maps to -1 and is dropped below.
+    index = int(match.group(1)) - FIRST_ID
     label = match.group(2).strip().strip("\"'").lower()
 
     if not 0 <= index < batch_size:
@@ -158,7 +164,7 @@ def _to_analysis(file, label, confidence, reason, destinations) -> FileAnalysis:
     if label != "review" and label not in destinations:
         return review_fallback(file, f"The AI picked an unknown folder ({label}).")
 
-    reason = reason or "Suggested by the AI."
+    reason = reason or DEFAULT_REASON
     destination = destinations.get(label)
 
     if destination is None:
