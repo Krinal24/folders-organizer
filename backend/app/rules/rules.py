@@ -132,6 +132,7 @@ def _suggestion(
         "rule": rule,
         "duplicate_of": duplicate_of,
         "size": item.get("size", 0),
+        "modified": item.get("modified"),
     }
 
 
