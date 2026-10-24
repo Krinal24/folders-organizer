@@ -41,7 +41,11 @@ def analyze(request: AnalyzeRequest):
     rule results arrive at once, AI results one by one after that.
     """
     try:
-        events = stream_plan(request.path, use_ai=request.use_ai)
+        events = stream_plan(
+            request.path,
+            use_ai=request.use_ai,
+            read_contents=request.read_contents,
+        )
 
     except FileNotFoundError as error:
         raise HTTPException(status_code=404, detail=str(error))
