@@ -1,14 +1,16 @@
+import json
 
 from fastapi import APIRouter, HTTPException
+from fastapi.responses import StreamingResponse
 
 from app.models.schemas import (
     ScanRequest,
     ScanResult,
     HealthResponse,
 )
-from app.models.ai_schemas import AnalyzeRequest, CleanupPlan
+from app.models.plan_schemas import AnalyzeRequest
+from app.planner import stream_plan
 from app.scanner.scanner import scan_folder
-from app.ai.ollama_analyzer import OllamaAnalyzer
 
 
 router = APIRouter()
@@ -31,23 +33,22 @@ def scan(request: ScanRequest):
         raise HTTPException(status_code=400, detail=str(error))
 
 
-@router.post("/analyze", response_model=CleanupPlan)
+@router.post("/analyze")
 def analyze(request: AnalyzeRequest):
+    """
+    Streams newline-delimited JSON events (see planner.stream_plan):
+    rule results arrive at once, AI results one by one after that.
+    """
     try:
-        analyzer = OllamaAnalyzer()
+        events = stream_plan(request.path, use_ai=request.use_ai)
 
-        plan = analyzer.analyze(request.files)
-
-        return plan
+    except FileNotFoundError as error:
+        raise HTTPException(status_code=404, detail=str(error))
 
     except ValueError as error:
-        raise HTTPException(
-            status_code=422,
-            detail=f"AI returned an invalid cleanup plan: {error}",
-        )
+        raise HTTPException(status_code=400, detail=str(error))
 
-    except Exception as error:
-        raise HTTPException(
-            status_code=502,
-            detail=f"AI analysis failed: {error}",
-        )
+    return StreamingResponse(
+        (json.dumps(event) + "\n" for event in events),
+        media_type="application/x-ndjson",
+    )

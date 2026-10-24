@@ -1,23 +1,28 @@
-
 import json
-from typing import Any
+import os
+from typing import Any, Iterator, get_args
 
 from ollama import chat
 
-from app.ai.analyzer import AIAnalyzer
-from app.models.ai_schemas import CleanupPlan
+from app.ai.analyzer import AIAnalyzer, is_safe_destination
+from app.models.ai_schemas import CleanupPlan, FileAnalysis
+from app.models.schemas import Category
 
 
 class OllamaAnalyzer(AIAnalyzer):
     def __init__(self):
-        self.model = "gemma3:4b"
+        self.model = os.getenv("OLLAMA_MODEL", "gemma3:4b")
 
     def analyze(
         self,
         files: list[dict[str, Any]],
     ) -> CleanupPlan:
-        analyses = []
+        return CleanupPlan(analyses=list(self.analyze_stream(files)))
 
+    def analyze_stream(
+        self,
+        files: list[dict[str, Any]],
+    ) -> Iterator[FileAnalysis]:
         system_prompt = """
 You are DownloadMind, a cautious file organization assistant.
 
@@ -64,58 +69,83 @@ Rules:
                 **file,
                 "relative_path": expected_path,
             }
-            response = chat(
-                model=self.model,
-                messages=[
-                    {
-                        "role": "system",
-                        "content": system_prompt,
-                    },
-                    {
-                        "role": "user",
-                        "content": (
-                            "Analyze this file:\n"
-                            + json.dumps(file_for_ai, ensure_ascii=False)
-                        ),
-                    },
-                ],
-                format=CleanupPlan.model_json_schema(),
-                options={"temperature": 0},
+            try:
+                yield self._analyze_one(system_prompt, file_for_ai, expected_path)
+            except ValueError as error:
+                # One bad answer shouldn't sink the whole folder.
+                yield _review_fallback(file_for_ai, error)
+
+    def _analyze_one(
+        self,
+        system_prompt: str,
+        file_for_ai: dict[str, Any],
+        expected_path: str,
+    ) -> FileAnalysis:
+        response = chat(
+            model=self.model,
+            messages=[
+                {
+                    "role": "system",
+                    "content": system_prompt,
+                },
+                {
+                    "role": "user",
+                    "content": (
+                        "Analyze this file:\n"
+                        + json.dumps(file_for_ai, ensure_ascii=False)
+                    ),
+                },
+            ],
+            format=CleanupPlan.model_json_schema(),
+            options={"temperature": 0},
+        )
+
+        content = response.message.content
+        single_plan = CleanupPlan.model_validate_json(content)
+
+        if len(single_plan.analyses) != 1:
+            raise ValueError(
+                f"Expected one analysis for {expected_path}, "
+                f"but received {len(single_plan.analyses)}."
             )
 
-            content = response.message.content
-            single_plan = CleanupPlan.model_validate_json(content)
+        analysis = single_plan.analyses[0]
 
-            if len(single_plan.analyses) != 1:
+        if analysis.relative_path != expected_path:
+            raise ValueError(
+                f"AI returned an unexpected path for {expected_path}."
+            )
+
+        if analysis.action == "move":
+            if not analysis.destination:
                 raise ValueError(
-                    f"Expected one analysis for {file['relative_path']}, "
-                    f"but received {len(single_plan.analyses)}."
+                    f"Missing destination for {analysis.relative_path}"
                 )
 
-            analysis = single_plan.analyses[0]
-
-            if analysis.relative_path != expected_path:
+            if not is_safe_destination(analysis.destination):
                 raise ValueError(
-                    f"AI returned an unexpected path for {expected_path}."
+                    f"Unsafe destination rejected for "
+                    f"{analysis.relative_path}"
                 )
 
-            if analysis.action == "move":
-                if not analysis.destination:
-                    raise ValueError(
-                        f"Missing destination for {analysis.relative_path}"
-                    )
+        elif analysis.destination is not None:
+            raise ValueError(
+                f"Unexpected destination for {analysis.relative_path}"
+            )
 
-                if analysis.destination.startswith(("/", "\\")):
-                    raise ValueError(
-                        f"Absolute destination rejected for "
-                        f"{analysis.relative_path}"
-                    )
+        return analysis
 
-            elif analysis.destination is not None:
-                raise ValueError(
-                    f"Unexpected destination for {analysis.relative_path}"
-                )
 
-            analyses.append(analysis)
+def _review_fallback(file: dict[str, Any], error: Exception) -> FileAnalysis:
+    category = file.get("category")
+    if category not in get_args(Category):
+        category = "unknown"
 
-        return CleanupPlan(analyses=analyses)
+    return FileAnalysis(
+        relative_path=file["relative_path"],
+        category=category,
+        subcategory="other",
+        action="review",
+        confidence=0.0,
+        reason=f"The AI response could not be used ({error}). Please review.",
+    )

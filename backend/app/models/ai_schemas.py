@@ -24,6 +24,3 @@ class FileAnalysis(BaseModel):
 
 class CleanupPlan(BaseModel):
     analyses: list[FileAnalysis]
-
-class AnalyzeRequest(BaseModel):
-    files: list[dict]
