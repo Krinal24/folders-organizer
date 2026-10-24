@@ -68,7 +68,27 @@ def test_old_installer_and_empty_file(tmp_path):
 
     assert result["setup.msi"]["rule"] == "old_installer"
     assert result["empty.txt"]["rule"] == "empty_file"
-    assert "new_setup.exe" not in result
+    # A recent installer isn't deleted, just filed away.
+    assert result["new_setup.exe"]["rule"] == "file_type"
+    assert result["new_setup.exe"]["destination"] == "Installers"
+
+
+def test_file_type_moves_unless_already_in_place(tmp_path):
+    write(tmp_path / "movie.mp4", b"video")
+    write(tmp_path / "Videos" / "clip.mkv", b"clip")
+    write(tmp_path / "song.mp3", b"song")
+    write(tmp_path / "notes.pdf", b"notes")
+    write(tmp_path / "app" / "package.json", b"{}")
+
+    result = run(tmp_path)
+
+    assert result["movie.mp4"]["action"] == "move"
+    assert result["movie.mp4"]["destination"] == "Videos"
+    assert result["song.mp3"]["destination"] == "Music"
+    assert result["app"]["destination"] == "Projects"
+    # Already in place, and documents are left for the AI.
+    assert os.path.join("Videos", "clip.mkv") not in result
+    assert "notes.pdf" not in result
 
 
 def test_duplicate_wins_over_old_installer(tmp_path):

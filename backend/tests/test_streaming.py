@@ -47,6 +47,8 @@ def test_rules_event_arrives_before_ai_starts(tmp_path):
 
     assert first["type"] == "rules"
     assert first["ai_pending"] == 2
+    assert "Documents/Study" in first["destinations"]
+    assert "Videos" in first["destinations"]
     assert [s["relative_path"] for s in first["suggestions"]] == ["b (1).txt"]
     assert calls == []
 

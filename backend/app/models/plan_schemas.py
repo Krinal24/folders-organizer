@@ -11,6 +11,7 @@ RuleName = Literal[
     "empty_file",
     "old_installer",
     "empty_folder",
+    "file_type",
 ]
 
 
@@ -18,6 +19,7 @@ class Suggestion(BaseModel):
     relative_path: str
     kind: Literal["file", "folder"]
     # Only rules may suggest "delete"; the AI is limited to move/keep/review.
+    # Rules may also "move" when the file type alone decides the folder.
     action: Literal["move", "keep", "review", "delete"]
     destination: str | None = None
     category: Category | None = None

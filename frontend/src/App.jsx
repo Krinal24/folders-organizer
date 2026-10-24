@@ -1,6 +1,8 @@
 
 import { useRef, useState } from "react";
 import "./index.css";
+import PlanView from "./PlanView.jsx";
+import { formatBytes } from "./format.js";
 
 const API_URL = "http://localhost:8000/api";
 
@@ -14,27 +16,6 @@ const CATEGORIES = [
   ["projects", "Projects"],
   ["unknown", "Unknown"],
 ];
-
-const ACTION_ORDER = { delete: 0, move: 1, review: 2, keep: 3 };
-
-const RULE_LABELS = {
-  duplicate: "Duplicate",
-  partial_download: "Leftover download",
-  empty_file: "Empty file",
-  old_installer: "Old installer",
-  empty_folder: "Empty folder",
-};
-
-function formatBytes(bytes) {
-  if (!bytes) return "0 B";
-  const units = ["B", "KB", "MB", "GB", "TB"];
-  const exponent = Math.min(
-    Math.floor(Math.log(bytes) / Math.log(1024)),
-    units.length - 1
-  );
-  const value = bytes / 1024 ** exponent;
-  return `${value.toFixed(exponent === 0 ? 0 : 1)} ${units[exponent]}`;
-}
 
 // Yields one parsed object per line of a newline-delimited JSON stream.
 async function* readNdjson(response) {
@@ -58,12 +39,6 @@ async function* readNdjson(response) {
   if (buffer.trim()) yield JSON.parse(buffer);
 }
 
-function sortSuggestions(suggestions) {
-  return [...suggestions].sort(
-    (a, b) =>
-      ACTION_ORDER[a.action] - ACTION_ORDER[b.action] || b.size - a.size
-  );
-}
 
 function App() {
   const [folderPath, setFolderPath] = useState("");
@@ -156,8 +131,10 @@ function App() {
       for await (const event of readNdjson(response)) {
         if (event.type === "rules") {
           setAnalysisResult({
+            runId: Date.now(),
             path: event.path,
             suggestions: event.suggestions,
+            destinations: event.destinations,
             aiPending: event.ai_pending,
             aiDone: 0,
             aiError: null,
@@ -192,10 +169,6 @@ function App() {
   };
 
   const stopAnalysis = () => abortRef.current?.abort();
-
-  const reclaimableSize = (analysisResult?.suggestions ?? [])
-    .filter((item) => item.action === "delete")
-    .reduce((total, item) => total + item.size, 0);
 
   return (
     <main className="app">
@@ -349,17 +322,13 @@ function App() {
 
                   <span className="plan-count">
                     {analysisResult.suggestions.length} suggestions
+                    {analyzing && " so far"}
                   </span>
                 </div>
 
                 <p className="plan-notice">
                   These are suggestions only. No files have been changed.
-                  {reclaimableSize > 0 && (
-                    <>
-                      {" "}Deleting the suggested files would free{" "}
-                      <strong>{formatBytes(reclaimableSize)}</strong>.
-                    </>
-                  )}
+                  Use "Change…" on any file or group to move it elsewhere, keep it, or delete it.
                 </p>
 
                 {analysisResult.aiError && (
@@ -376,60 +345,12 @@ function App() {
                   </p>
                 )}
 
-                <div className="plan-list">
-                  {sortSuggestions(analysisResult.suggestions).map((item) => (
-                    <article
-                      className="plan-card"
-                      key={item.relative_path}
-                    >
-                      <div className="plan-card-header">
-                        <div className="file-details">
-                          <h3>{item.relative_path}</h3>
-                          <p>
-                            <span className="source-tag">
-                              {item.source === "rule"
-                                ? RULE_LABELS[item.rule]
-                                : "AI"}
-                            </span>
-                            {[item.category, item.subcategory]
-                              .filter(Boolean)
-                              .join(" / ")}
-                            {item.kind === "file" &&
-                              ` · ${formatBytes(item.size)}`}
-                          </p>
-                        </div>
-
-                        <span
-                          className={`action-badge action-${item.action}`}
-                        >
-                          {item.action}
-                        </span>
-                      </div>
-
-                      <div className="plan-meta">
-                        {item.action === "move" && (
-                          <span>
-                            <strong>Destination:</strong> {item.destination}
-                          </span>
-                        )}
-
-                        {item.duplicate_of && (
-                          <span>
-                            <strong>Duplicate of:</strong>{" "}
-                            {item.duplicate_of}
-                          </span>
-                        )}
-
-                        <span>
-                          <strong>Confidence:</strong>{" "}
-                          {Math.round(item.confidence * 100)}%
-                        </span>
-                      </div>
-
-                      <p className="plan-reason">{item.reason}</p>
-                    </article>
-                  ))}
-                </div>
+                <PlanView
+                  // A new analysis starts with a clean slate of edits.
+                  key={analysisResult.runId}
+                  suggestions={analysisResult.suggestions}
+                  destinations={analysisResult.destinations}
+                />
               </section>
             )}
           </section>
