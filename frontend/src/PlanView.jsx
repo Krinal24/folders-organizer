@@ -119,7 +119,7 @@ function cleanFolderName(value) {
   return folder;
 }
 
-export default function PlanView({ suggestions, destinations = [], path, onRescan }) {
+export default function PlanView({ suggestions, destinations = [], path, onRescan, onShowHistory }) {
   const [filter, setFilter] = useState("");
   const [actionFilter, setActionFilter] = useState("all");
   const [openGroups, setOpenGroups] = useState(() => new Set());
@@ -220,6 +220,7 @@ export default function PlanView({ suggestions, destinations = [], path, onResca
         operations={operations}
         execution={execution}
         onRescan={onRescan}
+        onShowHistory={onShowHistory}
       />
 
       <div className="plan-summary">

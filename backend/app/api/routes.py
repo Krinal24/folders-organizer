@@ -8,7 +8,7 @@ from app.models.schemas import (
     ScanResult,
     HealthResponse,
 )
-from app.executor.executor import execute_plan, undo
+from app.executor.executor import AlreadyUndone, execute_plan, get_run, list_runs, undo
 from app.models.plan_schemas import AnalyzeRequest, ExecuteRequest, UndoRequest
 from app.planner import stream_plan
 from app.scanner.scanner import scan_folder
@@ -84,10 +84,31 @@ def execute(request: ExecuteRequest):
     return _ndjson(events)
 
 
+@router.get("/runs")
+def runs():
+    """Past runs, newest first, with what they changed and whether undone."""
+    return list_runs()
+
+
+@router.get("/runs/{run_id}")
+def run_details(run_id: str):
+    try:
+        return get_run(run_id)
+
+    except FileNotFoundError as error:
+        raise HTTPException(status_code=404, detail=str(error))
+
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error))
+
+
 @router.post("/undo")
 def undo_run(request: UndoRequest):
     try:
         return undo(request.journal_id)
+
+    except AlreadyUndone as error:
+        raise HTTPException(status_code=409, detail=str(error))
 
     except FileNotFoundError as error:
         raise HTTPException(status_code=404, detail=str(error))

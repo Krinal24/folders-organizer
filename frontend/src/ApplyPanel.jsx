@@ -55,7 +55,7 @@ export function ApplyBar({ operations, execution }) {
 }
 
 // Confirmation, progress and results, shown above the plan.
-export function ApplyPanel({ operations, execution, onRescan }) {
+export function ApplyPanel({ operations, execution, onRescan, onShowHistory }) {
   if (execution.phase === "idle") return null;
 
   if (execution.phase === "confirming") {
@@ -173,6 +173,11 @@ export function ApplyPanel({ operations, execution, onRescan }) {
             disabled={execution.undoing}
           >
             {execution.undoing ? "Undoing…" : "Undo moves"}
+          </button>
+        )}
+        {execution.journalId && (
+          <button className="link-button" onClick={onShowHistory}>
+            You can also undo later from History
           </button>
         )}
       </div>

@@ -4,7 +4,7 @@ import os
 import pytest
 from fastapi.testclient import TestClient
 
-from app.executor.executor import execute_plan, undo
+from app.executor.executor import AlreadyUndone, execute_plan, get_run, list_runs, undo
 from app.main import app
 
 
@@ -186,8 +186,74 @@ def test_undo_restores_moves_and_removes_created_folders(root):
     assert (root / "cv.pdf").exists() and (root / "song.mp3").exists()
     assert not (root / "Documents").exists() and not (root / "Music").exists()
 
-    with pytest.raises(FileNotFoundError):
+    # The run stays in the history, and can't be undone twice.
+    with pytest.raises(AlreadyUndone):
         undo(done["journal_id"])
+
+
+def test_history_lists_runs_newest_first_with_status(root):
+    write(root / "a.pdf")
+    write(root / "b.pdf", b"12345")
+    write(root / "c.pdf")
+
+    _, first = run(root, [op(root, "a.pdf", "move", "Docs"), op(root, "b.pdf", "delete")])
+    _, second = run(root, [op(root, "c.pdf", "move", "Docs")])
+    undo(second["journal_id"])
+
+    runs = list_runs()
+
+    assert [r["id"] for r in runs] == [second["journal_id"], first["journal_id"]]
+    newest, oldest = runs
+    assert (oldest["moved"], oldest["deleted"], oldest["freed"]) == (1, 1, 5)
+    assert oldest["completed"] and oldest["can_undo"] and not oldest["undone"]
+    assert newest["undone"]["restored"] == 1 and not newest["can_undo"]
+
+    details = get_run(first["journal_id"])
+    assert details["entries"][0] == {"op": "delete", "path": "b.pdf", "size": 5}
+
+
+def test_stopped_run_is_marked_incomplete(root):
+    write(root / "a.pdf")
+    write(root / "b.pdf")
+    events = execute_plan(str(root), [
+        op(root, "a.pdf", "move", "Docs"),
+        op(root, "b.pdf", "move", "Docs"),
+    ], trash=FakeTrash())
+    next(events)
+    next(events)
+    events.close()
+
+    [stopped] = list_runs()
+
+    assert stopped["completed"] is False
+    assert stopped["finished"] is not None
+    assert stopped["moved"] == 1
+
+
+def test_runs_that_changed_nothing_are_not_recorded(root):
+    run(root, [{"relative_path": "missing.pdf", "action": "delete"}])
+
+    assert list_runs() == []
+
+
+def test_damaged_journal_does_not_hide_others(root, journals):
+    write(root / "a.pdf")
+    run(root, [op(root, "a.pdf", "move", "Docs")])
+    (journals / "broken.json").write_text("{not json", encoding="utf-8")
+
+    assert len(list_runs()) == 1
+
+
+def test_runs_endpoints(root):
+    write(root / "a.pdf")
+    _, done = run(root, [op(root, "a.pdf", "move", "Docs")])
+    client = TestClient(app)
+
+    assert client.get("/api/runs").json()[0]["id"] == done["journal_id"]
+    assert client.get(f"/api/runs/{done['journal_id']}").json()["moved"] == 1
+    assert client.get("/api/runs/nope").status_code == 404
+    assert client.post("/api/undo", json={"journal_id": done["journal_id"]}).status_code == 200
+    assert client.post("/api/undo", json={"journal_id": done["journal_id"]}).status_code == 409
 
 
 def test_stopped_run_can_still_be_undone(root):
