@@ -4,3 +4,4 @@ pydantic
 python-dotenv
 huggingface_hub
 ollama
+send2trash

@@ -1,4 +1,6 @@
 import { useState } from "react";
+import { ApplyBar, ApplyPanel } from "./ApplyPanel.jsx";
+import { useExecution } from "./useExecution.js";
 import { formatBytes, plural } from "./format.js";
 
 const DELETE_GROUPS = {
@@ -117,7 +119,7 @@ function cleanFolderName(value) {
   return folder;
 }
 
-export default function PlanView({ suggestions, destinations = [] }) {
+export default function PlanView({ suggestions, destinations = [], path, onRescan }) {
   const [filter, setFilter] = useState("");
   const [actionFilter, setActionFilter] = useState("all");
   const [openGroups, setOpenGroups] = useState(() => new Set());
@@ -129,6 +131,13 @@ export default function PlanView({ suggestions, destinations = [] }) {
     const override = overrides.get(item.relative_path);
     return override ? { ...item, ...override, overridden: true } : item;
   });
+
+  const execution = useExecution(path);
+  const operations = effective
+    .filter((item) => item.action === "move" || item.action === "delete")
+    .map(({ relative_path, kind, action, destination, rule, size, modified }) => ({
+      relative_path, kind, action, destination, rule, size, modified,
+    }));
 
   const folderOptions = [
     ...new Set([
@@ -198,7 +207,21 @@ export default function PlanView({ suggestions, destinations = [] }) {
   const allOpen = groups.length > 0 && groups.every((g) => openGroups.has(g.key));
 
   return (
-    <div className="plan-view">
+    <div className={`plan-view ${execution.locked ? "locked" : ""}`}>
+      {execution.phase === "idle" && (
+        <p className="plan-notice">
+          These are suggestions only. No files have been changed yet. Use
+          “Change…” on any file or group to move it elsewhere, keep it, or
+          delete it.
+        </p>
+      )}
+
+      <ApplyPanel
+        operations={operations}
+        execution={execution}
+        onRescan={onRescan}
+      />
+
       <div className="plan-summary">
         <SummaryTile
           action="delete"
@@ -255,7 +278,7 @@ export default function PlanView({ suggestions, destinations = [] }) {
         </button>
       </div>
 
-      {changedCount > 0 && (
+      {changedCount > 0 && !execution.locked && (
         <p className="changes-note">
           You changed {plural(changedCount, "item")}.{" "}
           <button className="link-button" onClick={() => setOverrides(new Map())}>
@@ -279,9 +302,13 @@ export default function PlanView({ suggestions, destinations = [] }) {
             folderOptions={folderOptions}
             onChoose={applyChoice}
             onUndo={undo}
+            locked={execution.locked}
+            results={execution.results}
           />
         ))}
       </div>
+
+      <ApplyBar operations={operations} execution={execution} />
     </div>
   );
 }
@@ -299,7 +326,7 @@ function SummaryTile({ action, active, onClick, value, label }) {
   );
 }
 
-function PlanGroup({ group, open, onToggle, folderOptions, onChoose, onUndo }) {
+function PlanGroup({ group, open, onToggle, folderOptions, onChoose, onUndo, locked, results }) {
   const [shown, setShown] = useState(PAGE_SIZE);
   const remaining = group.items.length - shown;
   const currentFolder = group.action === "move" ? group.items[0].destination : null;
@@ -321,13 +348,15 @@ function PlanGroup({ group, open, onToggle, folderOptions, onChoose, onUndo }) {
           </span>
         </button>
 
-        <ChangeMenu
-          label={group.items.length > 1 ? "Change all…" : "Change…"}
-          folderOptions={folderOptions}
-          currentFolder={currentFolder}
-          action={group.action}
-          onChoose={(choice) => onChoose(group.items, choice)}
-        />
+        {!locked && (
+          <ChangeMenu
+            label={group.items.length > 1 ? "Change all…" : "Change…"}
+            folderOptions={folderOptions}
+            currentFolder={currentFolder}
+            action={group.action}
+            onChoose={(choice) => onChoose(group.items, choice)}
+          />
+        )}
       </div>
 
       {open && (
@@ -339,6 +368,8 @@ function PlanGroup({ group, open, onToggle, folderOptions, onChoose, onUndo }) {
               folderOptions={folderOptions}
               onChoose={(choice) => onChoose([item], choice)}
               onUndo={() => onUndo(item)}
+              locked={locked}
+              result={results.get(item.relative_path)}
             />
           ))}
           {remaining > 0 && (
@@ -357,7 +388,7 @@ function PlanGroup({ group, open, onToggle, folderOptions, onChoose, onUndo }) {
   );
 }
 
-function PlanRow({ item, folderOptions, onChoose, onUndo }) {
+function PlanRow({ item, folderOptions, onChoose, onUndo, locked, result }) {
   const separator = Math.max(
     item.relative_path.lastIndexOf("\\"),
     item.relative_path.lastIndexOf("/")
@@ -392,9 +423,11 @@ function PlanRow({ item, folderOptions, onChoose, onUndo }) {
             {item.overridden ? (
               <span className="row-changed">
                 Changed by you{" "}
-                <button className="link-button" onClick={onUndo}>
-                  Undo
-                </button>
+                {!locked && (
+                  <button className="link-button" onClick={onUndo}>
+                    Undo
+                  </button>
+                )}
               </span>
             ) : (
               detail
@@ -415,13 +448,19 @@ function PlanRow({ item, folderOptions, onChoose, onUndo }) {
         )}
       </span>
 
-      <ChangeMenu
-        label="Change…"
-        folderOptions={folderOptions}
-        currentFolder={item.action === "move" ? item.destination : null}
-        action={item.action}
-        onChoose={onChoose}
-      />
+      {result ? (
+        <RowResult result={result} />
+      ) : (
+        !locked && (
+          <ChangeMenu
+            label="Change…"
+            folderOptions={folderOptions}
+            currentFolder={item.action === "move" ? item.destination : null}
+            action={item.action}
+            onChoose={onChoose}
+          />
+        )
+      )}
     </li>
   );
 }
@@ -499,5 +538,23 @@ function ChangeMenu({ label, folderOptions, currentFolder, action, onChoose }) {
         {action !== "delete" && <option value={DELETE}>Delete</option>}
       </optgroup>
     </select>
+  );
+}
+
+function RowResult({ result }) {
+  if (result.status === "done") {
+    const newName = result.new_path?.split(/[\\/]/).pop();
+    const renamed = newName && !result.relative_path.endsWith(newName);
+    return (
+      <span className="row-result result-done" title={result.detail}>
+        ✓ {result.action === "move" ? "Moved" : "Deleted"}
+        {renamed && ` as ${newName}`}
+      </span>
+    );
+  }
+  return (
+    <span className={`row-result result-${result.status}`} title={result.detail}>
+      {result.status === "skipped" ? "Skipped" : "Failed"}: {result.detail}
+    </span>
   );
 }

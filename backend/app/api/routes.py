@@ -8,7 +8,8 @@ from app.models.schemas import (
     ScanResult,
     HealthResponse,
 )
-from app.models.plan_schemas import AnalyzeRequest
+from app.executor.executor import execute_plan, undo
+from app.models.plan_schemas import AnalyzeRequest, ExecuteRequest, UndoRequest
 from app.planner import stream_plan
 from app.scanner.scanner import scan_folder
 
@@ -48,7 +49,44 @@ def analyze(request: AnalyzeRequest):
     except ValueError as error:
         raise HTTPException(status_code=400, detail=str(error))
 
+    return _ndjson(events)
+
+
+def _ndjson(events):
     return StreamingResponse(
         (json.dumps(event) + "\n" for event in events),
         media_type="application/x-ndjson",
     )
+
+
+@router.post("/execute")
+def execute(request: ExecuteRequest):
+    """
+    Applies the moves and deletes the user approved, re-checking each one
+    against the disk. Streams one event per operation (see execute_plan).
+    """
+    try:
+        events = execute_plan(
+            request.path,
+            [operation.model_dump() for operation in request.operations],
+        )
+
+    except FileNotFoundError as error:
+        raise HTTPException(status_code=404, detail=str(error))
+
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error))
+
+    return _ndjson(events)
+
+
+@router.post("/undo")
+def undo_run(request: UndoRequest):
+    try:
+        return undo(request.journal_id)
+
+    except FileNotFoundError as error:
+        raise HTTPException(status_code=404, detail=str(error))
+
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error))

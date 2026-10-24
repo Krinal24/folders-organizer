@@ -3,8 +3,7 @@ import { useRef, useState } from "react";
 import "./index.css";
 import PlanView from "./PlanView.jsx";
 import { formatBytes } from "./format.js";
-
-const API_URL = "http://localhost:8000/api";
+import { API_URL, readNdjson } from "./api.js";
 
 const CATEGORIES = [
   ["documents", "Documents"],
@@ -16,28 +15,6 @@ const CATEGORIES = [
   ["projects", "Projects"],
   ["unknown", "Unknown"],
 ];
-
-// Yields one parsed object per line of a newline-delimited JSON stream.
-async function* readNdjson(response) {
-  const reader = response.body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = "";
-
-  while (true) {
-    const { value, done } = await reader.read();
-    if (done) break;
-
-    buffer += decoder.decode(value, { stream: true });
-    const lines = buffer.split("\n");
-    buffer = lines.pop();
-
-    for (const line of lines) {
-      if (line.trim()) yield JSON.parse(line);
-    }
-  }
-
-  if (buffer.trim()) yield JSON.parse(buffer);
-}
 
 
 function App() {
@@ -326,11 +303,6 @@ function App() {
                   </span>
                 </div>
 
-                <p className="plan-notice">
-                  These are suggestions only. No files have been changed.
-                  Use "Change…" on any file or group to move it elsewhere, keep it, or delete it.
-                </p>
-
                 {analysisResult.aiError && (
                   <p className="scan-warnings">
                     The AI stopped working, so the remaining files have no
@@ -350,6 +322,8 @@ function App() {
                   key={analysisResult.runId}
                   suggestions={analysisResult.suggestions}
                   destinations={analysisResult.destinations}
+                  path={analysisResult.path}
+                  onRescan={scanFolder}
                 />
               </section>
             )}

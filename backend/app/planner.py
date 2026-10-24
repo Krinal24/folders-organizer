@@ -143,4 +143,5 @@ def _ai_suggestions(analyses, items: dict[str, dict[str, Any]]):
             "reason": reason,
             "source": "ai",
             "size": item["size"],
+            "modified": item.get("modified"),
         }

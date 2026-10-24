@@ -1,6 +1,6 @@
 from typing import Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from app.models.schemas import Category
 
@@ -30,9 +30,31 @@ class Suggestion(BaseModel):
     rule: RuleName | None = None
     duplicate_of: str | None = None
     size: int
+    # Lets the executor detect files that changed after the analysis.
+    modified: float | None = None
 
 
 class AnalyzeRequest(BaseModel):
     path: str
     use_ai: bool = True
 
+
+class Operation(BaseModel):
+    """One approved change, as the user confirmed it."""
+    relative_path: str
+    kind: Literal["file", "folder"] = "file"
+    action: Literal["move", "delete"]
+    destination: str | None = None
+    rule: str | None = None
+    # As seen during analysis; files that changed since are skipped.
+    size: int | None = None
+    modified: float | None = None
+
+
+class ExecuteRequest(BaseModel):
+    path: str
+    operations: list[Operation] = Field(max_length=100_000)
+
+
+class UndoRequest(BaseModel):
+    journal_id: str
