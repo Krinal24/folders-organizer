@@ -1,7 +1,8 @@
 import json
+from pathlib import Path
 
 from fastapi import APIRouter, HTTPException
-from fastapi.responses import StreamingResponse
+from fastapi.responses import Response, StreamingResponse
 
 from app.models.schemas import (
     ScanRequest,
@@ -19,10 +20,14 @@ from app.models.plan_schemas import (
 )
 from app.picker import PickerUnavailable, pick_folder
 from app.planner import stream_plan
+from app.rules.photos import PHOTO_SUFFIXES, thumbnail
 from app.scanner.scanner import scan_folder
 
 
 router = APIRouter()
+
+# Folders scanned in this session; thumbnails are only served from these.
+scanned_roots: set[Path] = set()
 
 
 @router.get("/health", response_model=HealthResponse)
@@ -33,7 +38,9 @@ def health_check():
 @router.post("/scan", response_model=ScanResult)
 def scan(request: ScanRequest):
     try:
-        return scan_folder(request.path)
+        result = scan_folder(request.path)
+        scanned_roots.add(Path(result["path"]).resolve())
+        return result
 
     except FileNotFoundError as error:
         raise HTTPException(status_code=404, detail=str(error))
@@ -55,6 +62,7 @@ def analyze(request: AnalyzeRequest):
             read_contents=request.read_contents,
             include_subfolders=request.include_subfolders,
         )
+        scanned_roots.add(Path(request.path).expanduser().resolve())
 
     except FileNotFoundError as error:
         raise HTTPException(status_code=404, detail=str(error))
@@ -174,4 +182,24 @@ def choose_folder(request: PickFolderRequest):
 
     except PickerUnavailable as error:
         raise HTTPException(status_code=501, detail=str(error))
+
+
+@router.get("/thumbnail")
+def photo_thumbnail(root: str, path: str):
+    """A small JPEG of a photo inside a folder scanned in this session."""
+    root_path = Path(root).expanduser().resolve()
+    if root_path not in scanned_roots:
+        raise HTTPException(status_code=403, detail="Scan this folder first.")
+
+    photo = (root_path / path).resolve()
+    if not photo.is_relative_to(root_path) or photo == root_path:
+        raise HTTPException(status_code=403, detail="Outside the scanned folder.")
+    if photo.suffix.lower() not in PHOTO_SUFFIXES or not photo.is_file():
+        raise HTTPException(status_code=404, detail="No such photo.")
+
+    try:
+        image = thumbnail(photo)
+    except Exception:
+        raise HTTPException(status_code=415, detail="Can't read this image.")
+    return Response(image, media_type="image/jpeg", headers={"Cache-Control": "max-age=300"})
 

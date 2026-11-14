@@ -1110,3 +1110,33 @@ h1 {
   font-size: 13px;
 }
 
+/* Duplicate photos: this copy next to the one that's kept */
+
+.photo-pair {
+  display: flex;
+  flex-shrink: 0;
+  gap: 8px;
+}
+
+.photo-pair figure {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  margin: 0;
+}
+
+.photo-pair img {
+  width: 72px;
+  height: 72px;
+  object-fit: cover;
+  background: #f0f0f0;
+  border: 1px solid #e5e5e5;
+  border-radius: 8px;
+}
+
+.photo-pair figcaption {
+  color: #a3a3a3;
+  font-size: 11px;
+}
+

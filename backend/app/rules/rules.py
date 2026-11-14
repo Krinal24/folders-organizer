@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from app.learning.store import matching_rule
+from app.rules.photos import similar_groups
 
 
 DAY = 24 * 60 * 60
@@ -75,6 +76,37 @@ def _original_sort_key(item: dict[str, Any]):
     # Keep the copy without a "(1)" marker, then the oldest, then the shortest name.
     has_marker = bool(COPY_MARKER.search(Path(item["name"]).stem))
     return (has_marker, item["modified"], len(item["name"]), item["relative_path"])
+
+
+def _keeper_sort_key(photo: dict[str, Any]):
+    # Keep the sharpest copy: most pixels, then the biggest file, then as
+    # for exact duplicates.
+    return (-photo["width"] * photo["height"], -photo["size"], *_original_sort_key(photo))
+
+
+def find_similar_photos(root: Path, items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    suggestions = []
+
+    for group in similar_groups(root, items):
+        keeper, *others = sorted(group, key=_keeper_sort_key)
+        keeper_size = f"{keeper['width']}×{keeper['height']}"
+
+        for photo in others:
+            size = f"{photo['width']}×{photo['height']}"
+            detail = (
+                f"same size {size}, probably re-saved or forwarded"
+                if size == keeper_size
+                else f"{size} here vs {keeper_size} kept"
+            )
+            suggestions.append(_suggestion(
+                photo,
+                rule="similar_photo",
+                confidence=0.6,
+                reason=f"Looks like the same photo as {keeper['name']} ({detail}).",
+                duplicate_of=keeper["relative_path"],
+            ))
+
+    return suggestions
 
 
 def find_duplicates(root: Path, items: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -257,6 +289,11 @@ def apply_rules(
 
     # Duplicates first: "identical to X" is the most precise thing we can say.
     for suggestion in find_duplicates(root, scan["items"]):
+        suggestions[suggestion["relative_path"]] = suggestion
+
+    # Then the same photo saved differently (resized, re-compressed).
+    unmatched = [item for item in scan["items"] if item["relative_path"] not in suggestions]
+    for suggestion in find_similar_photos(root, unmatched):
         suggestions[suggestion["relative_path"]] = suggestion
 
     for item in scan["items"]:

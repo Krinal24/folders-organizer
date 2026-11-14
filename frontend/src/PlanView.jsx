@@ -2,6 +2,7 @@ import { useState } from "react";
 import { ApplyBar, ApplyPanel } from "./ApplyPanel.jsx";
 import RememberForm from "./RememberForm.jsx";
 import { useExecution } from "./useExecution.js";
+import { API_URL } from "./api.js";
 import { formatBytes, plural } from "./format.js";
 
 const DELETE_GROUPS = {
@@ -10,6 +11,10 @@ const DELETE_GROUPS = {
   partial_download: ["Leftover downloads", "Unfinished downloads and temporary files"],
   empty_file: ["Empty files", "Files with no content (0 bytes)"],
   empty_folder: ["Empty folders", "Folders with nothing inside"],
+  similar_photo: [
+    "Similar photos",
+    "The same picture as one that's kept, resized or re-saved. Compare before deleting.",
+  ],
   user: ["Delete (your choice)", "Files you chose to delete"],
 };
 
@@ -339,6 +344,7 @@ export default function PlanView({ suggestions, destinations = [], path, onResca
             remember={remember}
             locked={execution.locked}
             results={execution.results}
+            root={path}
           />
         ))}
       </div>
@@ -361,7 +367,7 @@ function SummaryTile({ action, active, onClick, value, label }) {
   );
 }
 
-function PlanGroup({ group, open, onToggle, folderOptions, onChoose, onUndo, remember, locked, results }) {
+function PlanGroup({ group, open, onToggle, folderOptions, onChoose, onUndo, remember, locked, results, root }) {
   const [shown, setShown] = useState(PAGE_SIZE);
   const remaining = group.items.length - shown;
   const currentFolder = group.action === "move" ? group.items[0].destination : null;
@@ -406,6 +412,7 @@ function PlanGroup({ group, open, onToggle, folderOptions, onChoose, onUndo, rem
               remember={remember}
               locked={locked}
               result={results.get(item.relative_path)}
+              root={root}
             />
           ))}
           {remaining > 0 && (
@@ -424,7 +431,7 @@ function PlanGroup({ group, open, onToggle, folderOptions, onChoose, onUndo, rem
   );
 }
 
-function PlanRow({ item, folderOptions, onChoose, onUndo, remember, locked, result }) {
+function PlanRow({ item, folderOptions, onChoose, onUndo, remember, locked, result, root }) {
   const [remembering, setRemembering] = useState(false);
   const separator = Math.max(
     item.relative_path.lastIndexOf("\\"),
@@ -436,7 +443,7 @@ function PlanRow({ item, folderOptions, onChoose, onUndo, remember, locked, resu
   // The group header already explains file-type moves and empty items.
   const detail = item.overridden
     ? ""
-    : item.duplicate_of
+    : item.rule === "duplicate"
       ? `Copy of ${item.duplicate_of}`
       : ["file_type", "empty_file", "empty_folder"].includes(item.rule)
         ? ""
@@ -483,6 +490,10 @@ function PlanRow({ item, folderOptions, onChoose, onUndo, remember, locked, resu
           </span>
         )}
       </div>
+
+      {item.category === "images" && item.duplicate_of && root && (
+        <PhotoPair root={root} photo={item.relative_path} kept={item.duplicate_of} />
+      )}
 
       <span className="row-meta">
         {item.kind === "file" && formatBytes(item.size)}
@@ -624,3 +635,25 @@ function RowResult({ result }) {
     </span>
   );
 }
+
+function thumbnailUrl(root, path) {
+  const query = new URLSearchParams({ root, path });
+  return `${API_URL}/thumbnail?${query}`;
+}
+
+// This copy next to the one that's kept, to compare before deleting.
+function PhotoPair({ root, photo, kept }) {
+  return (
+    <div className="photo-pair">
+      <figure>
+        <img src={thumbnailUrl(root, photo)} alt="" loading="lazy" />
+        <figcaption>This copy</figcaption>
+      </figure>
+      <figure>
+        <img src={thumbnailUrl(root, kept)} alt="" loading="lazy" />
+        <figcaption>Kept</figcaption>
+      </figure>
+    </div>
+  );
+}
+
