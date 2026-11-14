@@ -3,6 +3,7 @@ import { useRef, useState } from "react";
 import "./index.css";
 import HistoryView from "./HistoryView.jsx";
 import PlanView from "./PlanView.jsx";
+import RulesView from "./RulesView.jsx";
 import { formatBytes, plural } from "./format.js";
 import { API_URL, readNdjson } from "./api.js";
 
@@ -177,6 +178,14 @@ function App() {
               onClick={() => setView("history")}
             >
               History
+            </button>
+            <button
+              role="tab"
+              aria-selected={view === "rules"}
+              className={view === "rules" ? "active" : ""}
+              onClick={() => setView("rules")}
+            >
+              Rules
             </button>
           </nav>
         </header>
@@ -371,6 +380,10 @@ function App() {
 
         <div hidden={view !== "history"}>
           <HistoryView active={view === "history"} />
+        </div>
+
+        <div hidden={view !== "rules"}>
+          <RulesView active={view === "rules"} />
         </div>
       </section>
     </main>

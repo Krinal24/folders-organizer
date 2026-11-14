@@ -9,7 +9,8 @@ from app.models.schemas import (
     HealthResponse,
 )
 from app.executor.executor import AlreadyUndone, execute_plan, get_run, list_runs, undo
-from app.models.plan_schemas import AnalyzeRequest, ExecuteRequest, UndoRequest
+from app.learning import store as learning
+from app.models.plan_schemas import AnalyzeRequest, ExecuteRequest, RuleRequest, UndoRequest
 from app.planner import stream_plan
 from app.scanner.scanner import scan_folder
 
@@ -74,6 +75,10 @@ def execute(request: ExecuteRequest):
             request.path,
             [operation.model_dump() for operation in request.operations],
         )
+        # Only after the folder checked out; applied changes are what we learn from.
+        learning.record_corrections(
+            [correction.model_dump() for correction in request.corrections]
+        )
 
     except FileNotFoundError as error:
         raise HTTPException(status_code=404, detail=str(error))
@@ -115,3 +120,40 @@ def undo_run(request: UndoRequest):
 
     except ValueError as error:
         raise HTTPException(status_code=400, detail=str(error))
+
+
+@router.get("/learned")
+def learned():
+    """The user's saved rules and the corrections the AI learns from."""
+    corrections = learning.list_corrections()
+    return {
+        "rules": sorted(learning.list_rules(), key=lambda r: r["created"], reverse=True),
+        "corrections": len(corrections),
+        "recent_corrections": corrections[-10:][::-1],
+    }
+
+
+@router.post("/rules")
+def add_rule(request: RuleRequest):
+    try:
+        return learning.add_rule(request.contains, request.action, request.destination)
+
+    except learning.InvalidRule as error:
+        raise HTTPException(status_code=400, detail=str(error))
+
+
+@router.delete("/rules/{rule_id}")
+def delete_rule(rule_id: str):
+    try:
+        learning.delete_rule(rule_id)
+        return {"deleted": rule_id}
+
+    except FileNotFoundError as error:
+        raise HTTPException(status_code=404, detail=str(error))
+
+
+@router.delete("/corrections")
+def forget_corrections():
+    learning.clear_corrections()
+    return {"corrections": 0}
+

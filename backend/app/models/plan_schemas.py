@@ -13,6 +13,7 @@ RuleName = Literal[
     "empty_folder",
     "file_type",
     "unclear_document",
+    "learned",
 ]
 
 
@@ -29,6 +30,8 @@ class Suggestion(BaseModel):
     reason: str
     source: Literal["rule", "ai"]
     rule: RuleName | None = None
+    # For rule "learned": which of the user's saved rules matched.
+    rule_id: str | None = None
     duplicate_of: str | None = None
     size: int
     # Lets the executor detect files that changed after the analysis.
@@ -56,9 +59,26 @@ class Operation(BaseModel):
     modified: float | None = None
 
 
+class Correction(BaseModel):
+    """A suggestion the user changed before applying; TidyByte learns from it."""
+    relative_path: str
+    category: str | None = None
+    suggested_action: str | None = None
+    suggested_destination: str | None = None
+    chosen_action: Literal["move", "keep", "delete"]
+    chosen_destination: str | None = None
+
+
 class ExecuteRequest(BaseModel):
     path: str
     operations: list[Operation] = Field(max_length=100_000)
+    corrections: list[Correction] = Field(default=[], max_length=100_000)
+
+
+class RuleRequest(BaseModel):
+    contains: str
+    action: Literal["move", "keep"]
+    destination: str | None = None
 
 
 class UndoRequest(BaseModel):

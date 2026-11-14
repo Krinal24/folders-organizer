@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { ApplyBar, ApplyPanel } from "./ApplyPanel.jsx";
+import RememberForm from "./RememberForm.jsx";
 import { useExecution } from "./useExecution.js";
 import { formatBytes, plural } from "./format.js";
 
@@ -197,6 +198,37 @@ export default function PlanView({ suggestions, destinations = [], path, onResca
     );
   };
 
+  // What the user changed, sent with the plan so TidyByte learns from it.
+  const corrections = [...overrides].map(([relativePath, override]) => {
+    const original = suggestions.find((s) => s.relative_path === relativePath);
+    return {
+      relative_path: relativePath,
+      category: original.category,
+      suggested_action: original.action,
+      suggested_destination: original.destination ?? null,
+      chosen_action: override.action,
+      chosen_destination: override.destination ?? null,
+    };
+  });
+
+  // Other files in this plan a new rule would change. Duplicates stay as
+  // they are: the backend reports them before applying the user's rules.
+  const ruleMatches = (pattern, item) => {
+    const needle = pattern.trim().toLowerCase();
+    return effective.filter(
+      (other) =>
+        other.relative_path !== item.relative_path &&
+        other.rule !== "duplicate" &&
+        other.relative_path.split(/[\\/]/).pop().toLowerCase().includes(needle) &&
+        !(other.action === item.action && (other.destination ?? null) === (item.destination ?? null))
+    );
+  };
+  const remember = {
+    count: (pattern, item) => ruleMatches(pattern, item).length,
+    apply: (pattern, item) =>
+      applyChoice(ruleMatches(pattern, item), item.action === "keep" ? KEEP : item.destination),
+  };
+
   const undo = (item) =>
     setOverrides((current) => {
       const next = new Map(current);
@@ -218,6 +250,7 @@ export default function PlanView({ suggestions, destinations = [], path, onResca
 
       <ApplyPanel
         operations={operations}
+        corrections={corrections}
         execution={execution}
         onRescan={onRescan}
         onShowHistory={onShowHistory}
@@ -303,6 +336,7 @@ export default function PlanView({ suggestions, destinations = [], path, onResca
             folderOptions={folderOptions}
             onChoose={applyChoice}
             onUndo={undo}
+            remember={remember}
             locked={execution.locked}
             results={execution.results}
           />
@@ -327,7 +361,7 @@ function SummaryTile({ action, active, onClick, value, label }) {
   );
 }
 
-function PlanGroup({ group, open, onToggle, folderOptions, onChoose, onUndo, locked, results }) {
+function PlanGroup({ group, open, onToggle, folderOptions, onChoose, onUndo, remember, locked, results }) {
   const [shown, setShown] = useState(PAGE_SIZE);
   const remaining = group.items.length - shown;
   const currentFolder = group.action === "move" ? group.items[0].destination : null;
@@ -369,6 +403,7 @@ function PlanGroup({ group, open, onToggle, folderOptions, onChoose, onUndo, loc
               folderOptions={folderOptions}
               onChoose={(choice) => onChoose([item], choice)}
               onUndo={() => onUndo(item)}
+              remember={remember}
               locked={locked}
               result={results.get(item.relative_path)}
             />
@@ -389,7 +424,8 @@ function PlanGroup({ group, open, onToggle, folderOptions, onChoose, onUndo, loc
   );
 }
 
-function PlanRow({ item, folderOptions, onChoose, onUndo, locked, result }) {
+function PlanRow({ item, folderOptions, onChoose, onUndo, remember, locked, result }) {
+  const [remembering, setRemembering] = useState(false);
   const separator = Math.max(
     item.relative_path.lastIndexOf("\\"),
     item.relative_path.lastIndexOf("/")
@@ -428,6 +464,17 @@ function PlanRow({ item, folderOptions, onChoose, onUndo, locked, result }) {
                   <button className="link-button" onClick={onUndo}>
                     Undo
                   </button>
+                )}
+                {!locked && !remembering && item.action !== "delete" && (
+                  <>
+                    {" · "}
+                    <button
+                      className="link-button"
+                      onClick={() => setRemembering(true)}
+                    >
+                      Remember for similar files
+                    </button>
+                  </>
                 )}
               </span>
             ) : (
@@ -469,6 +516,16 @@ function PlanRow({ item, folderOptions, onChoose, onUndo, locked, result }) {
             onChoose={onChoose}
           />
         )
+      )}
+
+      {remembering && !locked && (
+        <RememberForm
+          item={item}
+          name={name}
+          countMatches={(pattern) => remember.count(pattern, item)}
+          applyToMatches={(pattern) => remember.apply(pattern, item)}
+          onClose={() => setRemembering(false)}
+        />
       )}
     </li>
   );

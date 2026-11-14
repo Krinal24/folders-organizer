@@ -11,7 +11,9 @@ from app.ai.prompts import (
     build_batch_prompt,
     build_system_prompt,
     existing_folders,
+    learned_folders,
     parent_folder,
+    relevant_examples,
 )
 from app.models.ai_schemas import CleanupPlan, FileAnalysis
 from app.models.schemas import Category
@@ -64,6 +66,7 @@ class BatchedAnalyzer(AIAnalyzer):
     def analyze_stream(
         self,
         files: list[dict[str, Any]],
+        examples: list[dict[str, Any]] = (),
     ) -> Iterator[FileAnalysis]:
         existing = existing_folders(files)
         groups = {}
@@ -78,7 +81,9 @@ class BatchedAnalyzer(AIAnalyzer):
 
         for group, group_files in groups.items():
             folders = GROUPS[group]["folders"] + existing
-            system = build_system_prompt(group, folders)
+            folders += learned_folders(examples, group, folders)
+            shown = relevant_examples(group_files, examples, group, folders)
+            system = build_system_prompt(group, folders, shown)
             decoy = GROUPS[group]["decoy"]
 
             for start in range(0, len(group_files), self.batch_size):
