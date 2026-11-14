@@ -1098,3 +1098,15 @@ h1 {
   margin-bottom: 12px;
 }
 
+/* Folder picker */
+
+.path-row .secondary-button {
+  flex-shrink: 0;
+}
+
+.picker-hint {
+  margin: 10px 0 0;
+  color: #737373;
+  font-size: 13px;
+}
+
