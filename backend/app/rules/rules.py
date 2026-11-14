@@ -232,6 +232,19 @@ def _file_type_rule(item: dict[str, Any]) -> dict[str, Any] | None:
     )
 
 
+def _unknown_type_rule(item: dict[str, Any]) -> dict[str, Any] | None:
+    if item["kind"] != "file" or item["category"] != "unknown":
+        return None
+    kind = f'"{item["extension"]}" files' if item["extension"] else "files without an extension"
+    return _suggestion(
+        item,
+        rule="unknown_type",
+        confidence=0.0,
+        reason=f"TidyByte doesn't know what to do with {kind}. Your call.",
+        action="review",
+    )
+
+
 def apply_rules(
     root: Path,
     scan: dict[str, Any],
@@ -254,6 +267,7 @@ def apply_rules(
             _learned_rule(item, learned_rules)
             or _single_file_rule(item, now)
             or _file_type_rule(item)
+            or _unknown_type_rule(item)
         )
         if suggestion:
             suggestions[item["relative_path"]] = suggestion

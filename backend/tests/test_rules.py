@@ -13,9 +13,15 @@ def write(path, content=b"x", age_days=0):
         os.utime(path, (stamp, stamp))
 
 
-def run(tmp_path):
+def run(tmp_path, include_unknown=False):
     scan = scan_folder(str(tmp_path))
-    return {s["relative_path"]: s for s in apply_rules(tmp_path, scan)}
+    return {
+        s["relative_path"]: s
+        for s in apply_rules(tmp_path, scan)
+        # Unknown types (.bin, a fresh .crdownload) get a "review" each;
+        # most tests are about the other rules.
+        if include_unknown or s["rule"] != "unknown_type"
+    }
 
 
 def test_duplicate_keeps_unmarked_original(tmp_path):
@@ -99,6 +105,17 @@ def test_duplicate_wins_over_old_installer(tmp_path):
 
     assert result["setup (1).exe"]["rule"] == "duplicate"
     assert result["setup.exe"]["rule"] == "old_installer"
+
+
+def test_unknown_types_are_left_for_review(tmp_path):
+    write(tmp_path / "labels.xml", b"<x/>")
+    write(tmp_path / "LICENSE", b"MIT")
+
+    result = run(tmp_path, include_unknown=True)
+
+    assert {s["action"] for s in result.values()} == {"review"}
+    assert '".xml" files' in result["labels.xml"]["reason"]
+    assert "without an extension" in result["LICENSE"]["reason"]
 
 
 def test_empty_folder(tmp_path):

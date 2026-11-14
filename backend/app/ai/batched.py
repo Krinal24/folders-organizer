@@ -67,8 +67,9 @@ class BatchedAnalyzer(AIAnalyzer):
         self,
         files: list[dict[str, Any]],
         examples: list[dict[str, Any]] = (),
+        context: list[dict[str, Any]] | None = None,
     ) -> Iterator[FileAnalysis]:
-        existing = existing_folders(files)
+        existing = existing_folders(files if context is None else context)
         groups = {}
 
         for file in files:

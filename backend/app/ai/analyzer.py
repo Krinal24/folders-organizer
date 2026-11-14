@@ -24,13 +24,16 @@ class AIAnalyzer(ABC):
         self,
         files: list[dict[str, Any]],
         examples: list[dict[str, Any]] = (),
+        context: list[dict[str, Any]] | None = None,
     ) -> Iterator[FileAnalysis]:
         """
         Yield analyses as they become ready. Providers that work
         file by file should override this so results show up live.
 
         examples are the user's past corrections; providers that can
-        should use them to follow the user's own choices.
+        should use them to follow the user's own choices. context is
+        everything scanned (defaults to files), for finding the folders
+        that already exist.
         """
         yield from self.analyze(files).analyses
 

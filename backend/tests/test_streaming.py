@@ -23,7 +23,7 @@ class FailsMidway(AIAnalyzer):
     def analyze(self, files):
         raise NotImplementedError
 
-    def analyze_stream(self, files, examples=()):
+    def analyze_stream(self, files, examples=(), context=None):
         yield analysis(files[0]["relative_path"])
         raise ConnectionError("Ollama went away")
 

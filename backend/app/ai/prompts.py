@@ -50,8 +50,9 @@ GROUPS = {
 # decoy's answer is ignored.
 FIRST_ID = 2
 
-# Files of unknown type are judged against the document folders.
-CATEGORY_GROUP = {"documents": "documents", "images": "images", "unknown": "documents"}
+# Only these go to the AI. Unknown types (.xml, .parquet, ...) are left
+# for the user: their names say too little for the AI to place them.
+CATEGORY_GROUP = {"documents": "documents", "images": "images"}
 
 # Existing subfolders are offered as destinations too, up to this many.
 MAX_EXISTING_FOLDERS = 15
