@@ -9,12 +9,31 @@ from app.ai.prompts import CATEGORY_GROUP, GROUPS, existing_folders, parent_fold
 from app.content.extract import extract_snippet, name_is_unclear
 from app.learning.store import list_corrections, list_rules, record_hits
 from app.models.plan_schemas import Suggestion
+from app.rules import folders as user_folders
 from app.rules.rules import TYPE_DESTINATIONS, apply_rules
 from app.scanner.scanner import scan_folder
 
 
 # Only what the AI needs to judge an item; no timestamps or local flags.
 AI_FIELDS = ("name", "relative_path", "kind", "extension", "category", "size", "file_count")
+
+# The folder TidyByte itself runs from (the repo, or an installed copy).
+APP_DIR = Path(__file__).resolve().parents[2]
+
+
+def _protect_app(root: Path, suggestion: dict[str, Any]) -> dict[str, Any]:
+    """Never move or delete the folder TidyByte is running from."""
+    if suggestion["action"] not in ("move", "delete"):
+        return suggestion
+    target = (root / suggestion["relative_path"]).resolve()
+    if APP_DIR != target and not APP_DIR.is_relative_to(target):
+        return suggestion
+    return {
+        **suggestion,
+        "action": "keep",
+        "destination": None,
+        "reason": "TidyByte itself runs from this folder, so it stays where it is.",
+    }
 
 # Which documents get their text read for the AI: "unclear" (names that
 # don't say what the file is), "all", or "off". Reading text costs model
@@ -64,7 +83,16 @@ def stream_plan(
     plan_scan, left_alone = (scan, None) if include_subfolders else _loose_only(scan)
 
     rules = list_rules()
-    rule_suggestions = apply_rules(root, plan_scan, learned_rules=rules)
+    # Folders the user already has, so "Documents/Resumes" becomes their RESUMES.
+    folders = user_folders.existing_folders(scan)
+
+    def adopt(suggestion):
+        return user_folders.adopt_existing(suggestion, folders)
+
+    rule_suggestions = [
+        _protect_app(root, adopt(s))
+        for s in apply_rules(root, plan_scan, learned_rules=rules)
+    ]
     handled = {suggestion["relative_path"] for suggestion in rule_suggestions}
     record_hits([s["rule_id"] for s in rule_suggestions if s.get("rule_id")])
     corrections = list_corrections()
@@ -83,7 +111,7 @@ def stream_plan(
             "type": "rules",
             "path": scan["path"],
             "suggestions": [_validated(s) for s in rule_suggestions],
-            "destinations": _destinations(scan["items"], rules, corrections),
+            "destinations": _destinations(scan["items"], folders, rules, corrections),
             "ai_pending": len(remaining) if run_ai else 0,
             "left_alone": left_alone,
         }
@@ -101,7 +129,7 @@ def stream_plan(
                 if not item["snippet"] and name_is_unclear(item["name"]):
                     # Neither the name nor the text says anything; an AI
                     # answer would be a guess, so don't ask for one.
-                    yield {"type": "ai", "suggestion": _validated(_unreadable(item))}
+                    yield {"type": "ai", "suggestion": _validated(adopt(_unreadable(item)))}
                     continue
             for_ai[path] = item
 
@@ -117,7 +145,7 @@ def stream_plan(
                 context=scan["items"],
             ) if for_ai else []
             for suggestion in _ai_suggestions(analyses, for_ai):
-                yield {"type": "ai", "suggestion": _validated(suggestion)}
+                yield {"type": "ai", "suggestion": _validated(adopt(suggestion))}
         except Exception as error:
             yield {"type": "error", "message": f"{type(error).__name__}: {error}"}
             yield {"type": "done", "ai_used": False}
@@ -177,10 +205,12 @@ def _loose_only(scan: dict[str, Any]) -> tuple[dict[str, Any], dict[str, int]]:
     return plan_scan, left_alone
 
 
-def _destinations(items, rules=(), corrections=()) -> list[str]:
+def _destinations(items, folders=(), rules=(), corrections=()) -> list[str]:
     """Every folder the user can pick when overriding a suggestion."""
-    paths = set(TYPE_DESTINATIONS.values())
-    paths |= {path for group in GROUPS.values() for _, path, _ in group["folders"]}
+    defaults = set(TYPE_DESTINATIONS.values())
+    defaults |= {path for group in GROUPS.values() for _, path, _ in group["folders"]}
+    # Offer the user's RESUMES rather than a look-alike Documents/Resumes.
+    paths = {user_folders.find_existing(path, folders) or path for path in defaults}
     paths |= {path for _, path, _ in existing_folders(items)}
     # Folders the user chose before, by rule or by hand.
     paths |= {rule["destination"] for rule in rules if rule.get("destination")}
