@@ -42,12 +42,14 @@ def stream_plan(
     use_ai: bool = True,
     analyzer_factory: Callable[[], AIAnalyzer] = get_analyzer,
     read_contents: bool = True,
+    include_subfolders: bool = False,
 ) -> Iterator[dict[str, Any]]:
     """
     Scan and apply rules immediately (so bad paths raise before streaming),
     then return an iterator of events:
 
-      {"type": "rules", "path", "suggestions", "destinations", "ai_pending"}
+      {"type": "rules", "path", "suggestions", "destinations", "ai_pending",
+       "left_alone"}
       {"type": "ai", "suggestion"}        one per AI result, as it arrives
       {"type": "error", "message"}        the AI failed; earlier results stand
       {"type": "done", "ai_used"}
@@ -56,8 +58,13 @@ def stream_plan(
     scan = scan_folder(folder_path)
     root = Path(scan["path"])
 
+    # By default only loose files are organized: folders the user made are
+    # usually organized already, and sorting their contents is slow and can
+    # break them (a dataset split from its labels, a course folder scattered).
+    plan_scan, left_alone = (scan, None) if include_subfolders else _loose_only(scan)
+
     rules = list_rules()
-    rule_suggestions = apply_rules(root, scan, learned_rules=rules)
+    rule_suggestions = apply_rules(root, plan_scan, learned_rules=rules)
     handled = {suggestion["relative_path"] for suggestion in rule_suggestions}
     record_hits([s["rule_id"] for s in rule_suggestions if s.get("rule_id")])
     corrections = list_corrections()
@@ -65,7 +72,7 @@ def stream_plan(
     # Only types whose folder depends on the name need the AI.
     remaining = {
         item["relative_path"]: item
-        for item in scan["items"]
+        for item in plan_scan["items"]
         if item["relative_path"] not in handled
         and item["category"] in CATEGORY_GROUP
     }
@@ -78,6 +85,7 @@ def stream_plan(
             "suggestions": [_validated(s) for s in rule_suggestions],
             "destinations": _destinations(scan["items"], rules, corrections),
             "ai_pending": len(remaining) if run_ai else 0,
+            "left_alone": left_alone,
         }
 
         if not run_ai:
@@ -104,6 +112,9 @@ def stream_plan(
                     for item in for_ai.values()
                 ],
                 examples=corrections,
+                # Existing folders come from the whole scan, not just the
+                # loose files being sorted.
+                context=scan["items"],
             ) if for_ai else []
             for suggestion in _ai_suggestions(analyses, for_ai):
                 yield {"type": "ai", "suggestion": _validated(suggestion)}
@@ -122,11 +133,13 @@ def build_plan(
     use_ai: bool = True,
     analyzer_factory: Callable[[], AIAnalyzer] = get_analyzer,
     read_contents: bool = True,
+    include_subfolders: bool = False,
 ) -> dict[str, Any]:
     """Collect the whole stream into one result."""
     result = {"suggestions": [], "ai_error": None}
 
-    for event in stream_plan(folder_path, use_ai, analyzer_factory, read_contents):
+    events = stream_plan(folder_path, use_ai, analyzer_factory, read_contents, include_subfolders)
+    for event in events:
         if event["type"] == "rules":
             result["path"] = event["path"]
             result["suggestions"].extend(event["suggestions"])
@@ -143,6 +156,25 @@ def build_plan(
         if suggestion["action"] == "delete"
     )
     return result
+
+
+def _loose_only(scan: dict[str, Any]) -> tuple[dict[str, Any], dict[str, int]]:
+    """Only items directly in the scanned folder, and what was left alone."""
+    loose = [item for item in scan["items"] if not parent_folder(item["relative_path"])]
+    nested = [item for item in scan["items"] if parent_folder(item["relative_path"])]
+    left_alone = {
+        "files": sum(
+            (item.get("file_count") or 0) if item["kind"] == "folder" else 1
+            for item in nested
+        ),
+        "folders": len({parent_folder(item["relative_path"]).split("/")[0] for item in nested}),
+    }
+    plan_scan = {
+        **scan,
+        "items": loose,
+        "empty_folders": [f for f in scan["empty_folders"] if not parent_folder(f)],
+    }
+    return plan_scan, left_alone
 
 
 def _destinations(items, rules=(), corrections=()) -> list[str]:

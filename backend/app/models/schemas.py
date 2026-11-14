@@ -10,12 +10,14 @@ Category = Literal[
     "executables",
     "archives",
     "projects",
+    "datasets",
     "unknown",
 ]
 
 
 class ScannedItem(BaseModel):
-    # "folder" items are self-contained bundles (git repos, code projects)
+    # "folder" items are self-contained bundles (git repos, code projects,
+    # datasets)
     # that must be moved as a unit, never split apart.
     kind: Literal["file", "folder"]
     name: str

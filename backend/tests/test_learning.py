@@ -143,7 +143,7 @@ class RecordingAnalyzer(AIAnalyzer):
     def analyze(self, files):
         raise NotImplementedError
 
-    def analyze_stream(self, files, examples=()):
+    def analyze_stream(self, files, examples=(), context=None):
         self.files, self.examples = files, examples
         for file in files:
             yield FileAnalysis(

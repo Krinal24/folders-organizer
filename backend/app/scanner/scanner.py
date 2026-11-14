@@ -44,7 +44,12 @@ PROJECT_MARKERS = {
     ".git", "package.json", "pyproject.toml", "requirements.txt",
     "cargo.toml", "go.mod", "pom.xml", "build.gradle", "composer.json",
 }
-PROJECT_MARKER_SUFFIXES = (".sln", ".csproj", ".xcodeproj")
+PROJECT_MARKER_SUFFIXES = (".sln", ".csproj", ".xcodeproj", ".ipynb")
+
+# A folder holding many files of one or two types (images with their label
+# files, CSV exports...) is a dataset: splitting it up would break it.
+DATASET_MIN_FILES = 50
+DATASET_SHARE = 0.8
 
 # Stop scanning after this many items so a huge folder can't hang the app.
 MAX_ITEMS = 50_000
@@ -63,15 +68,25 @@ def get_file_category(file_path: Path) -> str:
     return "unknown"
 
 
-def _is_project_dir(path: Path) -> bool:
+def _bundle_category(path: Path) -> str | None:
+    """"projects" or "datasets" for folders to keep whole, else None."""
     try:
-        names = {name.lower() for name in os.listdir(path)}
+        names = [name.lower() for name in os.listdir(path)]
     except OSError:
-        return False
+        return None
 
-    return bool(names & PROJECT_MARKERS) or any(
+    if set(names) & PROJECT_MARKERS or any(
         name.endswith(PROJECT_MARKER_SUFFIXES) for name in names
-    )
+    ):
+        return "projects"
+
+    extensions = Counter(Path(name).suffix for name in names if Path(name).suffix)
+    total = sum(extensions.values())
+    top_two = sum(count for _, count in extensions.most_common(2))
+    if total >= DATASET_MIN_FILES and top_two >= DATASET_SHARE * total:
+        return "datasets"
+
+    return None
 
 
 def _is_link(entry: os.DirEntry) -> bool:
@@ -162,14 +177,15 @@ def scan_folder(folder_path: str) -> dict[str, Any]:
                     if entry.name.lower() in EXCLUDED_DIRS:
                         continue
 
-                    if _is_project_dir(entry_path):
+                    bundle = _bundle_category(entry_path)
+                    if bundle:
                         size, file_count = _folder_totals(entry_path)
                         items.append({
                             "kind": "folder",
                             "name": entry.name,
                             "relative_path": relative_path,
                             "extension": "",
-                            "category": "projects",
+                            "category": bundle,
                             "size": size,
                             "modified": entry.stat(follow_symlinks=False).st_mtime,
                             "file_count": file_count,

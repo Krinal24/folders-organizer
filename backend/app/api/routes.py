@@ -46,6 +46,7 @@ def analyze(request: AnalyzeRequest):
             request.path,
             use_ai=request.use_ai,
             read_contents=request.read_contents,
+            include_subfolders=request.include_subfolders,
         )
 
     except FileNotFoundError as error:

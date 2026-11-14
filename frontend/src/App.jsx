@@ -15,6 +15,7 @@ const CATEGORIES = [
   ["executables", "Executables"],
   ["archives", "Archives"],
   ["projects", "Projects"],
+  ["datasets", "Datasets"],
   ["unknown", "Unknown"],
 ];
 
@@ -28,6 +29,7 @@ function App() {
   const [analyzing, setAnalyzing] = useState(false);
   const [useAi, setUseAi] = useState(true);
   const [readContents, setReadContents] = useState(true);
+  const [includeSubfolders, setIncludeSubfolders] = useState(false);
   const [view, setView] = useState("organize");
 
   const [error, setError] = useState("");
@@ -96,6 +98,7 @@ function App() {
           path: scanResult.path,
           use_ai: useAi,
           read_contents: readContents,
+          include_subfolders: includeSubfolders,
         }),
         signal: controller.signal,
       });
@@ -112,21 +115,27 @@ function App() {
       // Rule results arrive first; AI results trickle in one by one.
       for await (const event of readNdjson(response)) {
         if (event.type === "rules") {
+          const now = Date.now();
           setAnalysisResult({
-            runId: Date.now(),
+            runId: now,
             path: event.path,
             suggestions: event.suggestions,
             destinations: event.destinations,
+            leftAlone: event.left_alone,
             aiPending: event.ai_pending,
             aiDone: 0,
+            aiStartedAt: now,
+            aiLastAt: now,
             aiError: null,
             stopped: false,
           });
         } else if (event.type === "ai") {
+          const now = Date.now();
           setAnalysisResult((current) => ({
             ...current,
             suggestions: [...current.suggestions, event.suggestion],
             aiDone: current.aiDone + 1,
+            aiLastAt: now,
           }));
         } else if (event.type === "error") {
           setAnalysisResult((current) => ({
@@ -303,6 +312,17 @@ function App() {
                   names, like “DOC-2022…pdf”
                 </label>
 
+                <label className="ai-toggle">
+                  <input
+                    type="checkbox"
+                    checked={includeSubfolders}
+                    onChange={(event) => setIncludeSubfolders(event.target.checked)}
+                    disabled={analyzing}
+                  />
+                  Also organize files inside subfolders (much slower, and
+                  can scatter folders you organized yourself)
+                </label>
+
                 <button
                   className="analyse-button"
                   onClick={analyzeFolder}
@@ -315,7 +335,8 @@ function App() {
                   <div className="analysis-progress">
                     <p>
                       AI analyzed {analysisResult.aiDone} of{" "}
-                      {analysisResult.aiPending} files. Results appear
+                      {analysisResult.aiPending} files
+                      <TimeLeft result={analysisResult} />. Results appear
                       below as they come in.
                     </p>
                     <progress
@@ -363,6 +384,16 @@ function App() {
                     </p>
                   )}
 
+                  {analysisResult.leftAlone?.files > 0 && (
+                    <p className="plan-notice">
+                      Left alone: {analysisResult.leftAlone.files.toLocaleString()}{" "}
+                      files inside{" "}
+                      {plural(analysisResult.leftAlone.folders, "folder")} you
+                      already have. Only loose files were organized; tick
+                      “Also organize files inside subfolders” to include them.
+                    </p>
+                  )}
+
                   <PlanView
                     // A new analysis starts with a clean slate of edits.
                     key={analysisResult.runId}
@@ -392,16 +423,41 @@ function App() {
 
 // Projects are counted as one item each; say how many files they hold.
 function ProjectNote({ items }) {
-  const projects = items.filter((item) => item.kind === "folder");
-  if (projects.length === 0) return null;
+  const bundles = items.filter((item) => item.kind === "folder");
+  if (bundles.length === 0) return null;
 
-  const files = projects.reduce((total, item) => total + (item.file_count || 0), 0);
+  const projects = bundles.filter((item) => item.category === "projects").length;
+  const datasets = bundles.length - projects;
+  const files = bundles.reduce((total, item) => total + (item.file_count || 0), 0);
+  const kinds = [
+    projects && plural(projects, "code project"),
+    datasets && plural(datasets, "dataset"),
+  ].filter(Boolean);
+
   return (
     <p className="results-note">
-      Includes {plural(projects.length, "code project")} with{" "}
-      {files.toLocaleString()} files inside, kept together as one item each.
+      Includes {kinds.join(" and ")} with {files.toLocaleString()} files
+      inside, kept together as one item each.
     </p>
   );
+}
+
+// "about 4 min left", from the pace of the AI results so far.
+function TimeLeft({ result }) {
+  const { aiDone, aiPending, aiStartedAt, aiLastAt } = result;
+  if (aiDone < 3) return null;
+
+  const perFile = (aiLastAt - aiStartedAt) / aiDone;
+  const seconds = Math.round((perFile * (aiPending - aiDone)) / 1000);
+  if (seconds <= 0) return null;
+
+  const text =
+    seconds < 90
+      ? `${seconds} s`
+      : seconds < 90 * 60
+        ? `${Math.round(seconds / 60)} min`
+        : `${(seconds / 3600).toFixed(1)} hours`;
+  return <> · about {text} left</>;
 }
 
 function StatCard({ value, label, size }) {

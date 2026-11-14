@@ -137,7 +137,9 @@ def test_unclear_documents_without_text_skip_the_ai(tmp_path):
     (tmp_path / "Mine" / "DOC-2022-WA0004.pdf").write_bytes(b"%PDF-1.4 scan")
     analyzer = RecordingAnalyzer()
 
-    result = build_plan(str(tmp_path), analyzer_factory=lambda: analyzer)
+    result = build_plan(
+        str(tmp_path), analyzer_factory=lambda: analyzer, include_subfolders=True
+    )
 
     assert analyzer.files == []
     by_path = {s["relative_path"]: s for s in result["suggestions"]}

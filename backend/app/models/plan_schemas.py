@@ -14,6 +14,7 @@ RuleName = Literal[
     "file_type",
     "unclear_document",
     "learned",
+    "unknown_type",
 ]
 
 
@@ -45,6 +46,8 @@ class AnalyzeRequest(BaseModel):
     use_ai: bool = True
     # Let the AI read the start of documents whose names are unclear.
     read_contents: bool = True
+    # Off: only files directly in the folder; folders inside are left alone.
+    include_subfolders: bool = False
 
 
 class Operation(BaseModel):
