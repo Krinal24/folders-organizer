@@ -10,6 +10,7 @@ from typing import Any, Callable, Iterator
 from send2trash import send2trash
 
 from app.ai.analyzer import is_safe_destination
+from app.storage import data_dir, write_json
 
 
 # Allowed difference between the analyzed and current modified time.
@@ -21,10 +22,7 @@ JOURNAL_ID = re.compile(r"^[0-9A-Za-z_-]+$")
 def journal_dir() -> Path:
     """Undo journals live in app data, not in the user's folder."""
     override = os.getenv("JOURNAL_DIR")
-    if override:
-        return Path(override)
-    base = os.getenv("LOCALAPPDATA") or Path.home() / ".local" / "share"
-    return Path(base) / "TidyByte" / "journals"
+    return Path(override) if override else data_dir() / "journals"
 
 
 def _resolve_root(folder_path: str) -> Path:
@@ -213,12 +211,7 @@ def _make_dirs(root: Path, target_dir: Path, journal) -> None:
 
 
 def _save_journal(journal_id: str, journal) -> None:
-    folder = journal_dir()
-    folder.mkdir(parents=True, exist_ok=True)
-    # Write then rename, so a crash never leaves a half-written journal.
-    temporary = folder / f"{journal_id}.json.tmp"
-    temporary.write_text(json.dumps(journal, indent=2), encoding="utf-8")
-    os.replace(temporary, folder / f"{journal_id}.json")
+    write_json(journal_dir() / f"{journal_id}.json", journal)
 
 
 class AlreadyUndone(Exception):

@@ -55,7 +55,7 @@ export function ApplyBar({ operations, execution }) {
 }
 
 // Confirmation, progress and results, shown above the plan.
-export function ApplyPanel({ operations, execution, onRescan, onShowHistory }) {
+export function ApplyPanel({ operations, corrections = [], execution, onRescan, onShowHistory }) {
   if (execution.phase === "idle") return null;
 
   if (execution.phase === "confirming") {
@@ -83,7 +83,7 @@ export function ApplyPanel({ operations, execution, onRescan, onShowHistory }) {
           Moves can be undone afterwards.
         </p>
         <div className="apply-actions">
-          <button className="primary-button" onClick={() => execution.run(operations)}>
+          <button className="primary-button" onClick={() => execution.run(operations, corrections)}>
             Apply {plural(operations.length, "change")}
           </button>
           <button className="link-button" onClick={execution.cancel}>

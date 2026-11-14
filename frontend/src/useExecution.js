@@ -10,7 +10,7 @@ export function useExecution(path) {
 
   const update = (changes) => setState((current) => ({ ...current, ...changes }));
 
-  const run = async (operations) => {
+  const run = async (operations, corrections = []) => {
     const controller = new AbortController();
     abortRef.current = controller;
     setState({ phase: "running", results: new Map(), total: operations.length });
@@ -18,7 +18,7 @@ export function useExecution(path) {
     try {
       const response = await postJson(
         "/execute",
-        { path, operations },
+        { path, operations, corrections },
         { signal: controller.signal }
       );
       if (!response.ok) {

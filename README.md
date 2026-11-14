@@ -19,10 +19,21 @@ adjust every suggestion, and only then applies the changes, with undo.
    characters of their text (PDF, DOCX, PPTX, XLSX, TXT), read locally.
 4. **Review**: change any suggestion: move elsewhere, keep, or delete.
 5. **Apply**: every change is re-checked against the disk first. Nothing is
-   overwritten, deletes go to the Recycle Bin, and moves can be undone.
+   overwritten, deletes go to the Recycle Bin, and moves can be undone, then
+   or later from the **History** tab.
 
 The AI only ever suggests. Moving and deleting is done by plain code that
 validates each operation itself.
+
+### Learning from your changes
+
+- **Rules** you confirm: after changing a suggestion, "Remember for similar
+  files" saves a rule such as *names containing `21MAT` go to
+  `Documents/Study`*. Rules run before the AI (only exact duplicates come
+  first) and are managed in the **Rules** tab.
+- **Corrections**: every change you apply is remembered. The AI is shown the
+  most similar past choices as examples, and folders you created become
+  options it can pick.
 
 ## Requirements
 
@@ -70,7 +81,8 @@ Open http://localhost:5173, paste a folder path, and scan.
 | `AI_READ_CONTENTS` | `unclear` | Read document text for the AI: `unclear` names only, `all`, or `off` |
 | `HF_API_TOKEN` | | Needed for `huggingface` |
 | `HF_MODEL` | `Qwen/Qwen3-4B-Instruct-2507` | Hugging Face model |
-| `JOURNAL_DIR` | `%LOCALAPPDATA%\TidyByte\journals` | Where undo journals are kept |
+| `TIDYBYTE_DATA_DIR` | `%LOCALAPPDATA%\TidyByte` | Where rules, corrections and undo journals are kept |
+| `JOURNAL_DIR` | `<data dir>\journals` | Override for undo journals only |
 
 ## Tests
 

@@ -524,6 +524,7 @@ h1 {
 
 .plan-row {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 16px;
   padding: 10px 18px 10px 44px;
@@ -1005,5 +1006,95 @@ h1 {
 
 .entry-arrow {
   color: #a3a3a3;
+}
+
+/* Learning: remember-for-similar-files and the Rules tab */
+
+.remember-form,
+.new-rule {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+}
+
+.remember-form {
+  flex-basis: 100%;
+  padding: 10px 12px;
+  background: #eef4fb;
+  border-radius: 10px;
+  color: #2b4f75;
+}
+
+.remember-form input,
+.new-rule input,
+.new-rule select {
+  padding: 6px 8px;
+  font-size: 13px;
+}
+
+.remember-form input {
+  width: 140px;
+}
+
+.remember-form button[type="submit"],
+.new-rule button[type="submit"] {
+  padding: 6px 12px;
+  font-size: 13px;
+}
+
+.remember-error {
+  flex-basis: 100%;
+  color: #c62828;
+}
+
+.new-rule {
+  margin-bottom: 16px;
+  padding: 14px 16px;
+  background: white;
+  border: 1px dashed #d4d4d4;
+  border-radius: 12px;
+}
+
+.rule-list {
+  display: grid;
+  gap: 8px;
+  margin: 0 0 32px;
+  padding: 0;
+  list-style: none;
+}
+
+.rule-card {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  background: white;
+  border: 1px solid #e5e5e5;
+  border-left: 4px solid #2f6fb0;
+  border-radius: 12px;
+  font-size: 14px;
+  overflow-wrap: anywhere;
+}
+
+.rule-card > span:first-child {
+  flex: 1;
+  min-width: 200px;
+}
+
+.rule-hits {
+  color: #737373;
+  font-size: 12px;
+}
+
+.corrections h3 {
+  margin: 0 0 6px;
+  font-size: 18px;
+}
+
+.corrections .run-entries {
+  margin-bottom: 12px;
 }
 

@@ -5,6 +5,8 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Any
 
+from app.learning.store import matching_rule
+
 
 DAY = 24 * 60 * 60
 
@@ -183,13 +185,40 @@ def _single_file_rule(item: dict[str, Any], now: float) -> dict[str, Any] | None
     return None
 
 
-def _file_type_rule(item: dict[str, Any]) -> dict[str, Any] | None:
-    destination = TYPE_DESTINATIONS.get(item["category"])
-    if destination is None:
+def _already_under(item: dict[str, Any], destination: str) -> bool:
+    parent = Path(item["relative_path"]).parent.as_posix().lower()
+    destination = destination.lower()
+    return parent == destination or parent.startswith(destination + "/")
+
+
+def _learned_rule(item: dict[str, Any], rules: list[dict[str, Any]]) -> dict[str, Any] | None:
+    """A rule the user saved, e.g. names containing "21MAT" go to Documents/Study."""
+    rule = matching_rule(item["name"], rules)
+    if rule is None:
         return None
 
-    parent = Path(item["relative_path"]).parent.as_posix().lower()
-    if parent == destination.lower() or parent.startswith(destination.lower() + "/"):
+    base = {"rule": "learned", "confidence": 1.0}
+    if rule["action"] == "keep":
+        suggestion = _suggestion(
+            item, **base, action="keep",
+            reason=f'Your rule: keep names containing "{rule["contains"]}" where they are.',
+        )
+    elif _already_under(item, rule["destination"]):
+        suggestion = _suggestion(
+            item, **base, action="keep",
+            reason=f'Already in {rule["destination"]}, where your rule puts names containing "{rule["contains"]}".',
+        )
+    else:
+        suggestion = _suggestion(
+            item, **base, action="move", destination=rule["destination"],
+            reason=f'Your rule: names containing "{rule["contains"]}" go to {rule["destination"]}.',
+        )
+    return {**suggestion, "rule_id": rule["id"]}
+
+
+def _file_type_rule(item: dict[str, Any]) -> dict[str, Any] | None:
+    destination = TYPE_DESTINATIONS.get(item["category"])
+    if destination is None or _already_under(item, destination):
         return None
 
     label = "project" if item["kind"] == "folder" else item["category"].rstrip("s")
@@ -207,6 +236,7 @@ def apply_rules(
     root: Path,
     scan: dict[str, Any],
     now: float | None = None,
+    learned_rules: list[dict[str, Any]] = (),
 ) -> list[dict[str, Any]]:
     """Deterministic cleanup suggestions. At most one suggestion per path."""
     now = time.time() if now is None else now
@@ -219,7 +249,12 @@ def apply_rules(
     for item in scan["items"]:
         if item["relative_path"] in suggestions:
             continue
-        suggestion = _single_file_rule(item, now) or _file_type_rule(item)
+        # The user's own rules come before any of ours.
+        suggestion = (
+            _learned_rule(item, learned_rules)
+            or _single_file_rule(item, now)
+            or _file_type_rule(item)
+        )
         if suggestion:
             suggestions[item["relative_path"]] = suggestion
 

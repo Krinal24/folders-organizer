@@ -7,6 +7,7 @@ from app.ai.batched import DEFAULT_REASON
 from app.ai.factory import get_analyzer
 from app.ai.prompts import CATEGORY_GROUP, GROUPS, existing_folders, parent_folder
 from app.content.extract import extract_snippet, name_is_unclear
+from app.learning.store import list_corrections, list_rules, record_hits
 from app.models.plan_schemas import Suggestion
 from app.rules.rules import TYPE_DESTINATIONS, apply_rules
 from app.scanner.scanner import scan_folder
@@ -55,8 +56,11 @@ def stream_plan(
     scan = scan_folder(folder_path)
     root = Path(scan["path"])
 
-    rule_suggestions = apply_rules(root, scan)
+    rules = list_rules()
+    rule_suggestions = apply_rules(root, scan, learned_rules=rules)
     handled = {suggestion["relative_path"] for suggestion in rule_suggestions}
+    record_hits([s["rule_id"] for s in rule_suggestions if s.get("rule_id")])
+    corrections = list_corrections()
 
     # Only types whose folder depends on the name need the AI.
     remaining = {
@@ -72,7 +76,7 @@ def stream_plan(
             "type": "rules",
             "path": scan["path"],
             "suggestions": [_validated(s) for s in rule_suggestions],
-            "destinations": _destinations(scan["items"]),
+            "destinations": _destinations(scan["items"], rules, corrections),
             "ai_pending": len(remaining) if run_ai else 0,
         }
 
@@ -94,10 +98,13 @@ def stream_plan(
             for_ai[path] = item
 
         try:
-            analyses = analyzer_factory().analyze_stream([
-                {field: item.get(field) for field in (*AI_FIELDS, "snippet")}
-                for item in for_ai.values()
-            ]) if for_ai else []
+            analyses = analyzer_factory().analyze_stream(
+                [
+                    {field: item.get(field) for field in (*AI_FIELDS, "snippet")}
+                    for item in for_ai.values()
+                ],
+                examples=corrections,
+            ) if for_ai else []
             for suggestion in _ai_suggestions(analyses, for_ai):
                 yield {"type": "ai", "suggestion": _validated(suggestion)}
         except Exception as error:
@@ -138,11 +145,14 @@ def build_plan(
     return result
 
 
-def _destinations(items: list[dict[str, Any]]) -> list[str]:
+def _destinations(items, rules=(), corrections=()) -> list[str]:
     """Every folder the user can pick when overriding a suggestion."""
     paths = set(TYPE_DESTINATIONS.values())
     paths |= {path for group in GROUPS.values() for _, path, _ in group["folders"]}
     paths |= {path for _, path, _ in existing_folders(items)}
+    # Folders the user chose before, by rule or by hand.
+    paths |= {rule["destination"] for rule in rules if rule.get("destination")}
+    paths |= {c["chosen_destination"] for c in corrections if c.get("chosen_destination")}
     return sorted(paths, key=str.lower)
 
 

@@ -1,5 +1,8 @@
+import re
 from pathlib import PureWindowsPath
 from typing import Any
+
+from app.content.extract import GENERIC_WORDS
 
 
 # Each group gets its own short prompt and folder list; a small model does
@@ -102,16 +105,26 @@ def existing_folders(files: list[dict[str, Any]]) -> list[tuple[str, str, str]]:
     return existing[:MAX_EXISTING_FOLDERS]
 
 
-def build_system_prompt(group: str, folders: list[tuple[str, str, str]]) -> str:
+def build_system_prompt(
+    group: str,
+    folders: list[tuple[str, str, str]],
+    user_examples: list[tuple[str, str]] = (),
+) -> str:
     # Shown as name -> label rather than numbered reply lines, so the
     # model can't copy an example's answer onto the item with the same id.
+    # The user's own past choices go first, in the same list: a small model
+    # follows these examples far more reliably than notes in the message.
+    lines = [
+        f"{name} -> {label} (this user's own choice; follow it for similar names)"
+        for name, label in user_examples
+    ] + [
+        f"{name} -> {label} ({reason})"
+        for name, label, _, reason in GROUPS[group]["examples"]
+    ]
     return SYSTEM_PROMPT.format(
         group=group,
         folders="\n".join(f"{label}: {hint}" for label, _, hint in folders),
-        examples="\n".join(
-            f"{name} -> {label} ({reason})"
-            for name, label, _, reason in GROUPS[group]["examples"]
-        ),
+        examples="\n".join(lines),
     )
 
 
@@ -128,3 +141,74 @@ def build_batch_prompt(batch: list[dict[str, Any]], decoy: str) -> str:
         lines.append(line)
 
     return "Items:\n" + "\n".join(lines)
+
+
+# --- Learning from the user's corrections -----------------------------------
+
+# Past corrections shown to the model per group; each costs a few tokens.
+MAX_EXAMPLES = 4
+MAX_LEARNED_FOLDERS = 10
+
+
+def _name_words(name: str) -> set[str]:
+    words = re.findall(r"[a-z]{3,}", PureWindowsPath(name).stem.lower())
+    return set(words) - GENERIC_WORDS
+
+
+def _belongs_to(correction: dict[str, Any], group: str) -> bool:
+    return CATEGORY_GROUP.get(correction.get("category")) == group
+
+
+def learned_folders(
+    corrections: list[dict[str, Any]],
+    group: str,
+    folders: list[tuple[str, str, str]],
+) -> list[tuple[str, str, str]]:
+    """Folders the user moved files into that aren't offered yet."""
+    taken_labels = {label for label, _, _ in folders} | {"review"}
+    taken_paths = {path.lower() for _, path, _ in folders}
+    learned = []
+
+    for correction in reversed(corrections):  # Newest first.
+        path = correction.get("chosen_destination")
+        if (
+            correction.get("chosen_action") != "move"
+            or not path
+            or not _belongs_to(correction, group)
+            or path.lower() in taken_paths
+        ):
+            continue
+        label = re.sub(r"[^a-z0-9]+", "-", path.split("/")[-1].lower()).strip("-")
+        if not label or label in taken_labels:
+            continue
+        taken_labels.add(label)
+        taken_paths.add(path.lower())
+        learned.append((label, path, "a folder this user chose before"))
+
+    return learned[:MAX_LEARNED_FOLDERS]
+
+
+def relevant_examples(
+    files: list[dict[str, Any]],
+    corrections: list[dict[str, Any]],
+    group: str,
+    folders: list[tuple[str, str, str]],
+) -> list[tuple[str, str]]:
+    """The past corrections whose names share the most words with these files."""
+    label_for = {path.lower(): label for label, path, _ in folders}
+    file_words = set().union(*(_name_words(file["name"]) for file in files))
+
+    scored = []
+    for position, correction in enumerate(corrections):
+        label = label_for.get((correction.get("chosen_destination") or "").lower())
+        if correction.get("chosen_action") != "move" or not label:
+            continue
+        if not _belongs_to(correction, group) or "|" in correction["name"]:
+            continue
+        overlap = len(_name_words(correction["name"]) & file_words)
+        if overlap:
+            # More shared words first, then the most recent.
+            scored.append((overlap, position, correction["name"], label))
+
+    scored.sort(reverse=True)
+    return [(name, label) for _, _, name, label in scored[:MAX_EXAMPLES]]
