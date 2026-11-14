@@ -6,12 +6,19 @@ adjust every suggestion, and only then applies the changes, with undo.
 
 ## How it works
 
-1. **Scan**: lists files and sizes. Code projects (folders with `.git`,
-   `package.json`, …) are kept together as one item, and `node_modules`,
-   links and system files are skipped.
-2. **Rules**: instant, no AI. Finds duplicates (by content hash), leftover
-   downloads, empty files and folders, and old installers, and files videos,
-   music, archives and installers by type.
+1. **Scan**: pick a folder with **Browse…** or paste its path. Lists files
+   and sizes. Code projects (folders with `.git`, `package.json`, notebooks,
+   …) and datasets (many files of one or two types) are kept together as one
+   item; `node_modules`, links and system files are skipped. By default only
+   the loose files directly in the folder are organized; folders you made
+   are left alone unless you tick "Also organize files inside subfolders".
+2. **Rules**: no AI. Finds duplicates (by content hash), the same photo
+   saved differently (resized or re-compressed, by perceptual hash, shown
+   side by side), leftover downloads, empty files and folders, and old
+   installers, and files videos, music, archives and installers by type.
+   Suggestions use folders you already have: if a `RESUMES` or `Movies`
+   folder exists, files go there instead of a new `Documents/Resumes` or
+   `Videos`.
 3. **AI**: documents and images are sorted into folders such as
    `Documents/Study` or `Images/Screenshots` by an LLM, in batches, with
    results streamed to the UI as they arrive. For documents with unclear names

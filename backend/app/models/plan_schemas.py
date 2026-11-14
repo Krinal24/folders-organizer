@@ -15,6 +15,7 @@ RuleName = Literal[
     "unclear_document",
     "learned",
     "unknown_type",
+    "similar_photo",
 ]
 
 

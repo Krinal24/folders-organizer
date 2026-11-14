@@ -233,7 +233,7 @@ function App() {
               <input
                 id="folder-path"
                 type="text"
-                placeholder="C:\\Users\\YourName\\Downloads"
+                placeholder={"C:\\Users\\YourName\\Downloads"}
                 value={folderPath}
                 onChange={(event) => setFolderPath(event.target.value)}
                 onKeyDown={(event) => {
@@ -427,7 +427,7 @@ function App() {
                   {analysisResult.leftAlone?.files > 0 && (
                     <p className="plan-notice">
                       Left alone: {analysisResult.leftAlone.files.toLocaleString()}{" "}
-                      files inside{" "}
+                      {analysisResult.leftAlone.files === 1 ? "file" : "files"} inside{" "}
                       {plural(analysisResult.leftAlone.folders, "folder")} you
                       already have. Only loose files were organized; tick
                       “Also organize files inside subfolders” to include them.
