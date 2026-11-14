@@ -5,7 +5,7 @@ import HistoryView from "./HistoryView.jsx";
 import PlanView from "./PlanView.jsx";
 import RulesView from "./RulesView.jsx";
 import { formatBytes, plural } from "./format.js";
-import { API_URL, readNdjson } from "./api.js";
+import { API_URL, errorMessage, postJson, readNdjson } from "./api.js";
 
 const CATEGORIES = [
   ["documents", "Documents"],
@@ -26,6 +26,7 @@ function App() {
   const [analysisResult, setAnalysisResult] = useState(null);
 
   const [loading, setLoading] = useState(false);
+  const [picking, setPicking] = useState(false);
   const [analyzing, setAnalyzing] = useState(false);
   const [useAi, setUseAi] = useState(true);
   const [readContents, setReadContents] = useState(true);
@@ -37,8 +38,32 @@ function App() {
 
   const abortRef = useRef(null);
 
-  const scanFolder = async () => {
-    if (!folderPath.trim()) {
+  // The backend opens the system dialog: browsers never reveal real paths.
+  const browseFolder = async () => {
+    setPicking(true);
+    setError("");
+    try {
+      const response = await postJson("/pick-folder", {
+        initial: folderPath.trim() || null,
+      });
+      if (!response.ok) {
+        throw new Error(await errorMessage(response, "Could not open the folder picker."));
+      }
+      const { path } = await response.json();
+      if (path) {
+        setFolderPath(path);
+        scanFolder(path);
+      }
+    } catch (err) {
+      setError(`${err.message} You can paste the path instead.`);
+    } finally {
+      setPicking(false);
+    }
+  };
+
+  const scanFolder = async (path = folderPath) => {
+    const target = path.trim();
+    if (!target) {
       setError("Please enter a folder path.");
       return;
     }
@@ -57,7 +82,7 @@ function App() {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          path: folderPath.trim(),
+          path: target,
         }),
       });
 
@@ -219,13 +244,28 @@ function App() {
               />
 
               <button
+                className="secondary-button"
+                onClick={browseFolder}
+                disabled={picking || loading || analyzing}
+              >
+                {picking ? "Choosing…" : "Browse…"}
+              </button>
+
+              <button
                 className="primary-button"
-                onClick={scanFolder}
+                onClick={() => scanFolder()}
                 disabled={loading || analyzing}
               >
                 {loading ? "Scanning..." : "Scan Folder"}
               </button>
             </div>
+
+            {picking && (
+              <p className="picker-hint">
+                Pick a folder in the window that opened. If you can't see
+                it, it may be behind this browser window.
+              </p>
+            )}
 
             {error && <p className="error">{error}</p>}
           </section>

@@ -10,7 +10,14 @@ from app.models.schemas import (
 )
 from app.executor.executor import AlreadyUndone, execute_plan, get_run, list_runs, undo
 from app.learning import store as learning
-from app.models.plan_schemas import AnalyzeRequest, ExecuteRequest, RuleRequest, UndoRequest
+from app.models.plan_schemas import (
+    AnalyzeRequest,
+    ExecuteRequest,
+    PickFolderRequest,
+    RuleRequest,
+    UndoRequest,
+)
+from app.picker import PickerUnavailable, pick_folder
 from app.planner import stream_plan
 from app.scanner.scanner import scan_folder
 
@@ -157,4 +164,14 @@ def delete_rule(rule_id: str):
 def forget_corrections():
     learning.clear_corrections()
     return {"corrections": 0}
+
+
+@router.post("/pick-folder")
+def choose_folder(request: PickFolderRequest):
+    """Open the system folder dialog; path is null if the user cancels."""
+    try:
+        return {"path": pick_folder(request.initial)}
+
+    except PickerUnavailable as error:
+        raise HTTPException(status_code=501, detail=str(error))
 

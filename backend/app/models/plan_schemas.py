@@ -86,3 +86,9 @@ class RuleRequest(BaseModel):
 
 class UndoRequest(BaseModel):
     journal_id: str
+
+
+class PickFolderRequest(BaseModel):
+    # Where the dialog starts, e.g. the path already typed in.
+    initial: str | None = None
+
