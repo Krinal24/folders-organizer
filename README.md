@@ -100,6 +100,7 @@ Open http://localhost:5173, paste a folder path, and scan.
 | `HF_MODEL` | `Qwen/Qwen3-4B-Instruct-2507` | Hugging Face model |
 | `TIDYBYTE_DATA_DIR` | `%LOCALAPPDATA%\TidyByte` | Where rules, corrections and undo journals are kept |
 | `JOURNAL_DIR` | `<data dir>\journals` | Override for undo journals only |
+| `TIDYBYTE_ORIGINS` | `http://localhost:5173,http://127.0.0.1:5173` | Pages allowed to get the session key |
 
 ## Tests
 
