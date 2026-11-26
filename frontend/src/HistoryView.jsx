@@ -1,9 +1,9 @@
 import { useEffect, useState } from "react";
-import { API_URL, errorMessage, postJson } from "./api.js";
+import { apiFetch, errorMessage, postJson } from "./api.js";
 import { formatBytes, plural } from "./format.js";
 
 async function fetchRuns() {
-  const response = await fetch(`${API_URL}/runs`);
+  const response = await apiFetch(`/runs`);
   if (!response.ok) {
     throw new Error(await errorMessage(response, "Could not load history."));
   }
@@ -84,7 +84,7 @@ function describeUndo(result) {
 }
 
 async function fetchRun(id) {
-  const response = await fetch(`${API_URL}/runs/${id}`);
+  const response = await apiFetch(`/runs/${id}`);
   if (!response.ok) {
     throw new Error(await errorMessage(response, "Could not load this run."));
   }

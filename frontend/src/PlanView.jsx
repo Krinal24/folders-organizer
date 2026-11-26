@@ -2,7 +2,7 @@ import { useState } from "react";
 import { ApplyBar, ApplyPanel } from "./ApplyPanel.jsx";
 import RememberForm from "./RememberForm.jsx";
 import { useExecution } from "./useExecution.js";
-import { API_URL } from "./api.js";
+import { API_URL, sessionToken } from "./api.js";
 import { formatBytes, plural } from "./format.js";
 
 const DELETE_GROUPS = {
@@ -637,7 +637,7 @@ function RowResult({ result }) {
 }
 
 function thumbnailUrl(root, path) {
-  const query = new URLSearchParams({ root, path });
+  const query = new URLSearchParams({ root, path, token: sessionToken() });
   return `${API_URL}/thumbnail?${query}`;
 }
 

@@ -1,7 +1,7 @@
 import json
 from pathlib import Path
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import Response, StreamingResponse
 
 from app.models.schemas import (
@@ -22,17 +22,27 @@ from app.picker import PickerUnavailable, pick_folder
 from app.planner import stream_plan
 from app.rules.photos import PHOTO_SUFFIXES, thumbnail
 from app.scanner.scanner import scan_folder
+from app.security import require_session, session_token
 
 
-router = APIRouter()
+# Every route that reads or changes files needs the session key.
+router = APIRouter(dependencies=[Depends(require_session)])
+
+# The only two that don't.
+open_router = APIRouter()
 
 # Folders scanned in this session; thumbnails are only served from these.
 scanned_roots: set[Path] = set()
 
 
-@router.get("/health", response_model=HealthResponse)
+@open_router.get("/health", response_model=HealthResponse)
 def health_check():
     return {"status": "ok"}
+
+
+@open_router.get("/session")
+def start_session(request: Request):
+    return {"token": session_token(request)}
 
 
 @router.post("/scan", response_model=ScanResult)

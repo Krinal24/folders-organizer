@@ -25,3 +25,14 @@ def no_ocr(monkeypatch):
     from app.content import ocr
 
     monkeypatch.setattr(ocr, "read_scanned_pdf", lambda path: "")
+
+
+@pytest.fixture(autouse=True)
+def no_session_key():
+    """API tests skip the session key; test_session.py checks it."""
+    from app.main import app
+    from app.security import require_session
+
+    app.dependency_overrides[require_session] = lambda: None
+    yield
+    app.dependency_overrides.pop(require_session, None)
