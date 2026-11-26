@@ -6,7 +6,7 @@ from app.ai.analyzer import AIAnalyzer, is_safe_destination
 from app.ai.batched import DEFAULT_REASON
 from app.ai.factory import get_analyzer
 from app.ai.prompts import CATEGORY_GROUP, GROUPS, existing_folders, parent_folder
-from app.content.extract import extract_snippet, name_is_unclear
+from app.content.extract import SUPPORTED_SUFFIXES, extract_snippet, name_is_unclear
 from app.learning.store import list_corrections, list_rules, record_hits
 from app.models.plan_schemas import Suggestion
 from app.rules import folders as user_folders
@@ -39,6 +39,23 @@ def _protect_app(root: Path, suggestion: dict[str, Any]) -> dict[str, Any]:
 # don't say what the file is), "all", or "off". Reading text costs model
 # time, so "unclear" suits a local CPU model; a hosted one can use "all".
 CONTENT_MODES = {"unclear", "all", "off"}
+
+
+# AI answers below this confidence, or "Other" / "review", get a second
+# look: the file's text is read and the AI asked again.
+SECOND_LOOK_BELOW = 0.7
+
+
+def _needs_second_look(suggestion: dict[str, Any], item: dict[str, Any], mode: str) -> bool:
+    if mode == "off" or "snippet" in item:  # Its text was already read.
+        return False
+    if item["extension"] not in SUPPORTED_SUFFIXES:
+        return False
+    return (
+        suggestion["action"] == "review"
+        or suggestion["confidence"] < SECOND_LOOK_BELOW
+        or (suggestion.get("destination") or "").endswith("/Other")
+    )
 
 
 def _content_mode() -> str:
@@ -133,27 +150,68 @@ def stream_plan(
                     continue
             for_ai[path] = item
 
-        try:
-            analyses = analyzer_factory().analyze_stream(
+        def ask(analyzer, items):
+            return _ai_suggestions(analyzer.analyze_stream(
                 [
                     {field: item.get(field) for field in (*AI_FIELDS, "snippet")}
-                    for item in for_ai.values()
+                    for item in items.values()
                 ],
                 examples=corrections,
                 # Existing folders come from the whole scan, not just the
                 # loose files being sorted.
                 context=scan["items"],
-            ) if for_ai else []
-            for suggestion in _ai_suggestions(analyses, for_ai):
-                yield {"type": "ai", "suggestion": _validated(adopt(suggestion))}
+            ), items)
+
+        # First answers the AI wasn't sure about, held back for a second look.
+        unsure = {}
+        try:
+            analyzer = analyzer_factory() if for_ai else None
+            for suggestion in ask(analyzer, for_ai) if for_ai else []:
+                path = suggestion["relative_path"]
+                if _needs_second_look(suggestion, for_ai[path], mode):
+                    unsure[path] = suggestion
+                else:
+                    yield {"type": "ai", "suggestion": _validated(adopt(suggestion))}
         except Exception as error:
+            for suggestion in unsure.values():
+                yield {"type": "ai", "suggestion": _validated(adopt(suggestion))}
             yield {"type": "error", "message": f"{type(error).__name__}: {error}"}
             yield {"type": "done", "ai_used": False}
             return
 
+        yield from _second_look(root, analyzer, ask, unsure, for_ai, adopt)
         yield {"type": "done", "ai_used": True}
 
     return events()
+
+
+def _second_look(root, analyzer, ask, unsure, items, adopt):
+    """Ask again about unsure files, this time with their text.
+
+    Text comes from the file itself, or from OCR for scanned PDFs. Every
+    held-back file gets exactly one answer: the new one, or the first one
+    if there is nothing to read or the AI fails this time.
+    """
+    readable = {}
+    for path, first in unsure.items():
+        item = items[path]
+        item["snippet"] = extract_snippet(root / item["relative_path"])
+        if item["snippet"]:
+            readable[path] = item
+        else:
+            yield {"type": "ai", "suggestion": _validated(adopt(first))}
+
+    answered = set()
+    if readable:
+        try:
+            for suggestion in ask(analyzer, readable):
+                answered.add(suggestion["relative_path"])
+                yield {"type": "ai", "suggestion": _validated(adopt(suggestion))}
+        except Exception:
+            pass  # The first answers below are still useful.
+
+    for path in readable.keys() - answered:
+        yield {"type": "ai", "suggestion": _validated(adopt(unsure[path]))}
 
 
 def build_plan(

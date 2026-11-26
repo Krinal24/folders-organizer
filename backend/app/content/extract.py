@@ -6,6 +6,8 @@ from xml.etree import ElementTree
 
 from pypdf import PdfReader
 
+from app.content import ocr
+
 
 # Enough for the model to tell what a document is about; on a CPU-bound
 # local model every extra character costs reading time.
@@ -35,6 +37,12 @@ GENERIC_WORDS = {
     "jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "sept",
     "oct", "nov", "dec", "the", "and", "for",
 }
+
+# Footers that scanning apps stamp on every page; they say nothing.
+SCANNER_WATERMARKS = re.compile(
+    r"scanned (with|by) (camscanner|adobe scan)|camscanner|adobe scan",
+    re.IGNORECASE,
+)
 
 # pypdf logs a warning for every malformed object; that's noise here.
 logging.getLogger("pypdf").setLevel(logging.ERROR)
@@ -75,6 +83,24 @@ def _pdf_text(path: Path, max_chars: int) -> str:
     return " ".join(parts)
 
 
+def looks_like_text(text: str) -> bool:
+    """False for OCR gibberish, e.g. from handwriting: "xlu-+cLO cu.:a-l- boe"."""
+    tokens = text.split()
+    words = [
+        token for token in tokens
+        if re.fullmatch(r"[A-Za-z][a-z]{2,}|[A-Z]{3,}", token.strip(".,:;()[]'\"-"))
+    ]
+    # Measured on real scans: printed pages, forms and maths score 0.28+,
+    # handwriting mostly below 0.3, so long texts get a little more slack.
+    share = len(words) / max(len(tokens), 1)
+    return len(words) >= 3 and (share >= 0.35 or (len(words) >= 20 and share >= 0.25))
+
+
+def _scanned_pdf_text(path: Path) -> str:
+    text = SCANNER_WATERMARKS.sub(" ", ocr.read_scanned_pdf(path))
+    return text if looks_like_text(text) else ""
+
+
 def _ooxml_text(path: Path, part: str, tag: str) -> str:
     with zipfile.ZipFile(path) as archive:
         if part not in archive.namelist():
@@ -94,10 +120,14 @@ def _plain_text(path: Path, max_chars: int) -> str:
     return raw.decode("utf-8", errors="ignore")
 
 
-def extract_snippet(path: Path, max_chars: int = DEFAULT_MAX_CHARS) -> str:
+def extract_snippet(
+    path: Path, max_chars: int = DEFAULT_MAX_CHARS, read_scans: bool = True
+) -> str:
     """The first few hundred characters of a document's text, or "".
 
-    Never raises: unreadable, encrypted or unsupported files just give "".
+    A PDF with no text layer (a scan) is read with OCR when `read_scans`
+    is set and OCR is available. Never raises: unreadable, encrypted or
+    unsupported files just give "".
     """
     suffix = path.suffix.lower()
     if suffix not in SUPPORTED_SUFFIXES:
@@ -113,7 +143,13 @@ def extract_snippet(path: Path, max_chars: int = DEFAULT_MAX_CHARS) -> str:
         else:
             text = _plain_text(path, max_chars)
     except Exception:
-        # Corrupt PDFs and zips raise a zoo of exception types.
-        return ""
+        # Corrupt PDFs and zips raise a zoo of exception types. A PDF
+        # pypdf can't parse may still render, so it gets the OCR try.
+        if suffix != ".pdf":
+            return ""
+        text = ""
 
-    return _clean(text, max_chars)
+    text = _clean(text, max_chars)
+    if not text and suffix == ".pdf" and read_scans:
+        text = _clean(_scanned_pdf_text(path), max_chars)
+    return text

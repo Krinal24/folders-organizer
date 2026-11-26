@@ -17,3 +17,11 @@ def empty_recycle_bin(monkeypatch):
 
     monkeypatch.setattr(recycle_bin, "_items", lambda original: iter(()))
     monkeypatch.setattr(recycle_bin, "supported", lambda: True)
+
+
+@pytest.fixture(autouse=True)
+def no_ocr(monkeypatch):
+    """OCR is slow and machine-dependent; tests opt in explicitly."""
+    from app.content import ocr
+
+    monkeypatch.setattr(ocr, "read_scanned_pdf", lambda path: "")
