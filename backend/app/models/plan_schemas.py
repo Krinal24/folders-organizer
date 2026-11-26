@@ -87,6 +87,8 @@ class RuleRequest(BaseModel):
 
 class UndoRequest(BaseModel):
     journal_id: str
+    # Positions in the run's list of changes; all of them when omitted.
+    entries: list[int] | None = None
 
 
 class PickFolderRequest(BaseModel):

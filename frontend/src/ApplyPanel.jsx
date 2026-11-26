@@ -80,7 +80,7 @@ export function ApplyPanel({ operations, corrections = [], execution, onRescan, 
         <p className="apply-fineprint">
           Nothing is overwritten: if a name is taken, the file gets a number
           like “report (1).pdf”. Files that changed since the scan are skipped.
-          Moves can be undone afterwards.
+          Everything can be undone afterwards, all at once or file by file.
         </p>
         <div className="apply-actions">
           <button className="primary-button" onClick={() => execution.run(operations, corrections)}>
@@ -121,17 +121,22 @@ export function ApplyPanel({ operations, corrections = [], execution, onRescan, 
   const freed = execution.summary?.freed ?? 0;
 
   if (execution.phase === "undone") {
-    const { restored, problems: undoProblems, in_recycle_bin } = execution.undoSummary;
+    const { restored, recovered, problems: undoProblems, in_recycle_bin } = execution.undoSummary;
     return (
       <div className="apply-panel">
-        <h3>Moves undone</h3>
+        <h3>Changes undone</h3>
         <p>
-          {plural(restored, "file")} moved back to where {restored === 1 ? "it was" : "they were"}.
+          {[
+            restored > 0 && `${plural(restored, "file")} moved back`,
+            recovered > 0 && `${plural(recovered, "item")} restored from the Recycle Bin`,
+          ]
+            .filter(Boolean)
+            .join(" · ") || "Nothing could be put back."}
           {in_recycle_bin > 0 &&
-            ` ${plural(in_recycle_bin, "deleted item")} ${in_recycle_bin === 1 ? "is" : "are"} still in the Recycle Bin. Restore from there if needed.`}
+            ` ${plural(in_recycle_bin, "deleted item")} ${in_recycle_bin === 1 ? "is" : "are"} still in the Recycle Bin.`}
         </p>
         {undoProblems.length > 0 && (
-          <ProblemList title="Could not move back" items={undoProblems} />
+          <ProblemList title="Could not undo" items={undoProblems} />
         )}
         <button className="primary-button" onClick={onRescan}>
           Scan again
@@ -166,18 +171,18 @@ export function ApplyPanel({ operations, corrections = [], execution, onRescan, 
         <button className="primary-button" onClick={onRescan}>
           Scan again
         </button>
-        {counts.moved > 0 && execution.journalId && (
+        {counts.moved + counts.deleted > 0 && execution.journalId && (
           <button
             className="secondary-button"
             onClick={execution.undo}
             disabled={execution.undoing}
           >
-            {execution.undoing ? "Undoing…" : "Undo moves"}
+            {execution.undoing ? "Undoing…" : "Undo all"}
           </button>
         )}
         {execution.journalId && (
           <button className="link-button" onClick={onShowHistory}>
-            You can also undo later from History
+            Undo some files, or later, from History
           </button>
         )}
       </div>

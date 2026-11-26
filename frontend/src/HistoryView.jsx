@@ -48,8 +48,9 @@ export default function HistoryView({ active }) {
 
       <p className="plan-notice">
         Every time you apply changes, TidyByte records what it moved and
-        deleted. Moves can be undone here at any time. Deleted items stay in
-        the Recycle Bin until you empty it.
+        deleted. Undo a whole run or just some of its files, at any time:
+        moved files go back where they were, and deleted ones come back out
+        of the Recycle Bin, as long as it hasn't been emptied.
       </p>
 
       {error && <p className="error">{error}</p>}
@@ -69,37 +70,72 @@ export default function HistoryView({ active }) {
   );
 }
 
+function describeUndo(result) {
+  const parts = [
+    result.restored > 0 && `${plural(result.restored, "file")} moved back`,
+    result.recovered > 0 &&
+      `${plural(result.recovered, "item")} restored from the Recycle Bin`,
+  ].filter(Boolean);
+  let text = parts.length ? `${parts.join(" · ")}.` : "Nothing could be put back.";
+  if (result.problems.length) {
+    text += ` ${plural(result.problems.length, "item")} could not be: ${result.problems.join("; ")}`;
+  }
+  return { ok: result.problems.length === 0, text };
+}
+
+async function fetchRun(id) {
+  const response = await fetch(`${API_URL}/runs/${id}`);
+  if (!response.ok) {
+    throw new Error(await errorMessage(response, "Could not load this run."));
+  }
+  return response.json();
+}
+
 function RunCard({ run, onChanged }) {
   const [details, setDetails] = useState(null);
   const [open, setOpen] = useState(false);
+  const [selected, setSelected] = useState(() => new Set());
   const [confirming, setConfirming] = useState(false);
   const [undoing, setUndoing] = useState(false);
   const [message, setMessage] = useState(null);
 
-  const toggleDetails = async () => {
+  const loadDetails = () =>
+    fetchRun(run.id)
+      .then(setDetails)
+      .catch((err) => setMessage({ ok: false, text: err.message }));
+
+  const toggleDetails = () => {
     setOpen(!open);
-    if (!details) {
-      const response = await fetch(`${API_URL}/runs/${run.id}`);
-      if (response.ok) setDetails(await response.json());
-    }
+    if (!details) loadDetails();
   };
 
-  const undo = async () => {
+  const canUndo = (entry) =>
+    !entry.undone && (entry.op === "move" || run.can_restore_deletes);
+  const undoable = details
+    ? details.entries.map((entry, index) => (canUndo(entry) ? index : null)).filter((i) => i !== null)
+    : [];
+
+  const toggle = (index) =>
+    setSelected((current) => {
+      const next = new Set(current);
+      if (next.has(index)) next.delete(index);
+      else next.add(index);
+      return next;
+    });
+
+  const toggleAll = () =>
+    setSelected(selected.size === undoable.length ? new Set() : new Set(undoable));
+
+  const undo = async (entries) => {
     setUndoing(true);
     try {
-      const response = await postJson("/undo", { journal_id: run.id });
+      const response = await postJson("/undo", { journal_id: run.id, entries });
       if (!response.ok) {
         throw new Error(await errorMessage(response, "Could not undo."));
       }
-      const result = await response.json();
-      setMessage({
-        ok: result.problems.length === 0,
-        text:
-          `${plural(result.restored, "file")} moved back.` +
-          (result.problems.length
-            ? ` ${plural(result.problems.length, "file")} could not be: ${result.problems.join("; ")}`
-            : ""),
-      });
+      setMessage(describeUndo(await response.json()));
+      setSelected(new Set());
+      if (details) loadDetails();
       onChanged();
     } catch (err) {
       setMessage({ ok: false, text: err.message });
@@ -109,11 +145,13 @@ function RunCard({ run, onChanged }) {
     }
   };
 
-  const status = run.undone
+  const status = !run.can_undo && run.undone > 0
     ? ["undone", "Undone"]
-    : !run.completed
-      ? ["stopped", "Stopped early"]
-      : ["done", "Done"];
+    : run.undone > 0
+      ? ["partly", "Partly undone"]
+      : !run.completed
+        ? ["stopped", "Stopped early"]
+        : ["done", "Done"];
 
   return (
     <article className="run-card">
@@ -131,8 +169,8 @@ function RunCard({ run, onChanged }) {
         {plural(run.moved, "file")} moved · {plural(run.deleted, "item")} sent to
         the Recycle Bin
         {run.freed > 0 && ` (${formatBytes(run.freed)} freed)`}
-        {run.undone &&
-          ` · undone ${new Date(run.undone.at * 1000).toLocaleString()}`}
+        {run.undone > 0 &&
+          ` · ${run.undone} undone, last ${new Date(run.undone_at * 1000).toLocaleString()}`}
       </p>
 
       {message && (
@@ -142,12 +180,16 @@ function RunCard({ run, onChanged }) {
       {confirming ? (
         <div className="run-confirm">
           <span>
-            Move {plural(run.moved, "file")} back to where{" "}
-            {run.moved === 1 ? "it was" : "they were"}?
-            {run.deleted > 0 && " Deleted items stay in the Recycle Bin."}
+            Undo {run.pending === 1 ? "the remaining change" : `all ${run.pending} remaining changes`}?
+            {" "}Moved files go back where they were
+            {run.deleted > 0 &&
+              (run.can_restore_deletes
+                ? " and deleted items come back from the Recycle Bin"
+                : "; restore deleted items from the Trash by hand")}
+            .
           </span>
-          <button className="primary-button" onClick={undo} disabled={undoing}>
-            {undoing ? "Undoing…" : "Undo moves"}
+          <button className="primary-button" onClick={() => undo(null)} disabled={undoing}>
+            {undoing ? "Undoing…" : "Undo all"}
           </button>
           <button className="link-button" onClick={() => setConfirming(false)}>
             Cancel
@@ -157,33 +199,65 @@ function RunCard({ run, onChanged }) {
         <div className="run-actions">
           {run.can_undo && (
             <button className="secondary-button" onClick={() => setConfirming(true)}>
-              Undo moves
+              Undo all
             </button>
           )}
           <button className="link-button" onClick={toggleDetails}>
-            {open ? "Hide details" : "Show details"}
+            {open ? "Hide details" : run.can_undo ? "Choose files to undo" : "Show details"}
           </button>
         </div>
       )}
 
       {open && details && (
-        <ul className="run-entries">
-          {details.entries.map((entry, index) => (
-            <li key={index}>
-              {entry.op === "move" ? (
-                <>
-                  <span className="entry-op op-move">Moved</span>
-                  {entry.from} <span className="entry-arrow">→</span> {entry.to}
-                </>
-              ) : (
-                <>
-                  <span className="entry-op op-delete">Deleted</span>
-                  {entry.path}
-                </>
-              )}
-            </li>
-          ))}
-        </ul>
+        <>
+          {undoable.length > 0 && (
+            <div className="run-select-bar">
+              <label>
+                <input
+                  type="checkbox"
+                  checked={selected.size === undoable.length}
+                  onChange={toggleAll}
+                />
+                Select all
+              </label>
+              <button
+                className="primary-button"
+                onClick={() => undo([...selected])}
+                disabled={selected.size === 0 || undoing}
+              >
+                {undoing ? "Undoing…" : `Undo selected (${selected.size})`}
+              </button>
+            </div>
+          )}
+          <ul className="run-entries">
+            {details.entries.map((entry, index) => (
+              <li key={index} className={entry.undone ? "entry-undone" : undefined}>
+                {canUndo(entry) ? (
+                  <input
+                    type="checkbox"
+                    aria-label={`Undo ${entry.from || entry.path}`}
+                    checked={selected.has(index)}
+                    onChange={() => toggle(index)}
+                  />
+                ) : (
+                  <span className="entry-check-placeholder" />
+                )}
+                {entry.op === "move" ? (
+                  <span>
+                    <span className="entry-op op-move">Moved</span>
+                    {entry.from} <span className="entry-arrow">→</span> {entry.to}
+                  </span>
+                ) : (
+                  <span>
+                    <span className="entry-op op-delete">Deleted</span>
+                    {entry.path}
+                  </span>
+                )}
+                {entry.undone && <span className="entry-undone-tag">Undone</span>}
+              </li>
+            ))}
+          </ul>
+        </>
       )}
     </article>
   );
