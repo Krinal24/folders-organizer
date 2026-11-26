@@ -5,7 +5,7 @@ import HistoryView from "./HistoryView.jsx";
 import PlanView from "./PlanView.jsx";
 import RulesView from "./RulesView.jsx";
 import { formatBytes, plural } from "./format.js";
-import { API_URL, errorMessage, postJson, readNdjson } from "./api.js";
+import { apiFetch, errorMessage, postJson, readNdjson } from "./api.js";
 
 const CATEGORIES = [
   ["documents", "Documents"],
@@ -76,7 +76,7 @@ function App() {
     setAnalysisResult(null);
 
     try {
-      const response = await fetch(`${API_URL}/scan`, {
+      const response = await apiFetch(`/scan`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -114,7 +114,7 @@ function App() {
     setAnalysisResult(null);
 
     try {
-      const response = await fetch(`${API_URL}/analyze`, {
+      const response = await apiFetch(`/analyze`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

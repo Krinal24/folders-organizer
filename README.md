@@ -37,6 +37,11 @@ adjust every suggestion, and only then applies the changes, with undo.
 The AI only ever suggests. Moving and deleting is done by plain code that
 validates each operation itself.
 
+The local API only obeys the TidyByte page: each time the backend starts
+it makes a random session key, hands it only to the page (checked by the
+browser's Origin header, on `localhost` only), and refuses any request
+without it. Other web pages you visit can't use it to touch your files.
+
 ### Learning from your changes
 
 - **Rules** you confirm: after changing a suggestion, "Remember for similar

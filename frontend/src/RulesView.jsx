@@ -1,9 +1,9 @@
 import { useEffect, useState } from "react";
-import { API_URL, errorMessage, postJson } from "./api.js";
+import { apiFetch, errorMessage, postJson } from "./api.js";
 import { plural } from "./format.js";
 
 async function fetchLearned() {
-  const response = await fetch(`${API_URL}/learned`);
+  const response = await apiFetch(`/learned`);
   if (!response.ok) {
     throw new Error(await errorMessage(response, "Could not load your rules."));
   }
@@ -45,13 +45,13 @@ export default function RulesView({ active }) {
   const reload = () => setReloadKey((key) => key + 1);
 
   const deleteRule = async (rule) => {
-    const response = await fetch(`${API_URL}/rules/${rule.id}`, { method: "DELETE" });
+    const response = await apiFetch(`/rules/${rule.id}`, { method: "DELETE" });
     if (!response.ok) setError(await errorMessage(response, "Could not delete the rule."));
     reload();
   };
 
   const forget = async () => {
-    const response = await fetch(`${API_URL}/corrections`, { method: "DELETE" });
+    const response = await apiFetch(`/corrections`, { method: "DELETE" });
     if (!response.ok) setError(await errorMessage(response, "Could not forget corrections."));
     setConfirmForget(false);
     reload();
