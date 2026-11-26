@@ -24,6 +24,9 @@ adjust every suggestion, and only then applies the changes, with undo.
    results streamed to the UI as they arrive. For documents with unclear names
    (`DOC-2022…pdf`, `83a91f2e.pdf`) the AI also gets the first ~200
    characters of their text (PDF, DOCX, PPTX, XLSX, TXT), read locally.
+   When the AI isn't sure about a file from its name alone, it gets a second
+   look with the file's text. Scanned PDFs, which are only pictures of pages,
+   are read with the OCR built into Windows, on your machine.
 4. **Review**: change any suggestion: move elsewhere, keep, or delete.
 5. **Apply**: every change is re-checked against the disk first. Nothing is
    overwritten and deletes go to the Recycle Bin. Everything can be undone
@@ -87,7 +90,7 @@ Open http://localhost:5173, paste a folder path, and scan.
 | `AI_PROVIDER` | `ollama` | `ollama` or `huggingface` |
 | `OLLAMA_MODEL` | `gemma3:4b` | Local model to use |
 | `AI_BATCH_SIZE` | `40` | Files per AI request |
-| `AI_READ_CONTENTS` | `unclear` | Read document text for the AI: `unclear` names only, `all`, or `off` |
+| `AI_READ_CONTENTS` | `unclear` | Read document text for the AI: `unclear` names and files the AI is unsure about, `all`, or `off` (also turns off OCR) |
 | `HF_API_TOKEN` | | Needed for `huggingface` |
 | `HF_MODEL` | `Qwen/Qwen3-4B-Instruct-2507` | Hugging Face model |
 | `TIDYBYTE_DATA_DIR` | `%LOCALAPPDATA%\TidyByte` | Where rules, corrections and undo journals are kept |
