@@ -949,6 +949,7 @@ h1 {
 .status-done { background: #e0f2e7; color: #17633a; }
 .status-stopped { background: #fff0cf; color: #825500; }
 .status-undone { background: #e8e8e8; color: #404040; }
+.status-partly { background: #e6eefc; color: #2a4f8f; }
 
 .run-summary,
 .run-message {
@@ -990,6 +991,53 @@ h1 {
 
 .run-entries li {
   padding: 3px 0;
+}
+
+.history .run-entries li {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.run-entries input[type="checkbox"],
+.entry-check-placeholder {
+  flex-shrink: 0;
+  width: 14px;
+  margin: 0;
+}
+
+.entry-undone > span:not(.entry-undone-tag) {
+  color: #a3a3a3;
+  text-decoration: line-through;
+}
+
+.entry-undone-tag {
+  flex-shrink: 0;
+  margin-left: auto;
+  color: #737373;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.run-select-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 14px;
+}
+
+.run-select-bar label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.run-select-bar .primary-button {
+  padding: 9px 14px;
+  font-size: 13px;
 }
 
 .entry-op {

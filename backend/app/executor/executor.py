@@ -10,6 +10,7 @@ from typing import Any, Callable, Iterator
 from send2trash import send2trash
 
 from app.ai.analyzer import is_safe_destination
+from app.executor import recycle_bin
 from app.storage import data_dir, write_json
 
 
@@ -166,6 +167,8 @@ def _apply(root, operation, trash, journal) -> dict[str, Any]:
                 "op": "delete",
                 "path": relative_path,
                 "size": operation.get("size") or 0,
+                # Lets undo find this exact item in the Recycle Bin.
+                "deleted_at": time.time(),
             })
             return result("done", "Moved to the Recycle Bin.")
 
@@ -227,9 +230,26 @@ def _journal_file(journal_id: str) -> Path:
     return journal_file
 
 
+
+
+def _load(journal_file: Path) -> dict[str, Any]:
+    journal = json.loads(journal_file.read_text(encoding="utf-8"))
+    old = journal.get("undone")
+    if old and "restored" in old:
+        # Before per-file undo, one flag covered the whole run, and only
+        # moves were put back. Deletes from such runs can still be restored.
+        for entry in journal["entries"]:
+            if entry["op"] == "move":
+                entry.setdefault("undone", old["at"])
+        journal["undone"] = None
+    return journal
+
+
 def _summary(journal_id: str, journal: dict[str, Any]) -> dict[str, Any]:
-    moves = [e for e in journal["entries"] if e["op"] == "move"]
-    deletes = [e for e in journal["entries"] if e["op"] == "delete"]
+    entries = journal["entries"]
+    moves = [e for e in entries if e["op"] == "move"]
+    deletes = [e for e in entries if e["op"] == "delete"]
+    undone = [e["undone"] for e in entries if e.get("undone")]
     return {
         "id": journal_id,
         "root": journal["root"],
@@ -240,8 +260,11 @@ def _summary(journal_id: str, journal: dict[str, Any]) -> dict[str, Any]:
         "moved": len(moves),
         "deleted": len(deletes),
         "freed": sum(e.get("size", 0) for e in deletes),
-        "undone": journal.get("undone"),
-        "can_undo": bool(moves) and not journal.get("undone"),
+        "undone": len(undone),
+        "undone_at": max(undone) if undone else None,
+        "pending": len(entries) - len(undone),
+        "can_undo": len(undone) < len(entries),
+        "can_restore_deletes": recycle_bin.supported(),
     }
 
 
@@ -254,53 +277,101 @@ def list_runs() -> list[dict[str, Any]]:
     runs = []
     for journal_file in folder.glob("*.json"):
         try:
-            journal = json.loads(journal_file.read_text(encoding="utf-8"))
-            runs.append(_summary(journal_file.stem, journal))
+            runs.append(_summary(journal_file.stem, _load(journal_file)))
         except (OSError, ValueError, KeyError):
             continue  # A damaged journal shouldn't hide the others.
     return sorted(runs, key=lambda run: run["created"], reverse=True)
 
 
 def get_run(journal_id: str) -> dict[str, Any]:
-    journal = json.loads(_journal_file(journal_id).read_text(encoding="utf-8"))
+    journal = _load(_journal_file(journal_id))
     return {**_summary(journal_id, journal), "entries": journal["entries"]}
 
 
-def undo(journal_id: str) -> dict[str, Any]:
-    """Move files back and remove folders the run created, if still empty.
+class UndoProblem(Exception):
+    pass
 
-    Deleted files can't be restored automatically; they are in the Recycle
-    Bin. The run stays in the history, marked as undone.
+
+def _undo_move(root: Path, entry: dict[str, Any]) -> None:
+    current = (root / entry["to"]).resolve()
+    original = (root / entry["from"]).resolve()
+    if not (_inside(root, current) and _inside(root, original)):
+        raise UndoProblem("outside the folder, skipped")
+    if not current.exists():
+        raise UndoProblem(f"no longer at {entry['to']}")
+    if original.exists():
+        raise UndoProblem("something else is there now")
+    try:
+        original.parent.mkdir(parents=True, exist_ok=True)
+        shutil.move(str(current), str(original))
+    except OSError as error:
+        raise UndoProblem(error.strerror or str(error))
+
+
+def _undo_delete(root: Path, journal: dict[str, Any], entry: dict[str, Any]) -> None:
+    original = (root / entry["path"]).resolve()
+    if not _inside(root, original):
+        raise UndoProblem("outside the folder, skipped")
+    if not recycle_bin.supported():
+        raise UndoProblem("restore it from the Trash by hand")
+    item = recycle_bin.find(
+        original,
+        entry.get("deleted_at"),
+        earliest=journal["created"],
+        latest=journal.get("finished") or time.time(),
+    )
+    if item is None:
+        raise UndoProblem("not in the Recycle Bin any more (emptied or already restored?)")
+    try:
+        recycle_bin.restore(item, original)
+    except FileExistsError:
+        raise UndoProblem("something else is there now")
+    except OSError as error:
+        raise UndoProblem(error.strerror or str(error))
+
+
+def undo(journal_id: str, indices: list[int] | None = None) -> dict[str, Any]:
+    """Put back the chosen entries of a run, or all of them.
+
+    Moved files go back where they were; deleted ones come back out of the
+    Recycle Bin. Each entry is marked as undone on its own, so the rest of
+    the run can still be undone later. Folders the run created are removed
+    once they are empty.
     """
     journal_file = _journal_file(journal_id)
-    journal = json.loads(journal_file.read_text(encoding="utf-8"))
-    if journal.get("undone"):
-        raise AlreadyUndone("This run has already been undone.")
+    journal = _load(journal_file)
+    entries = journal["entries"]
+
+    if indices is None:
+        chosen = range(len(entries))
+    else:
+        if any(not 0 <= index < len(entries) for index in indices):
+            raise ValueError("No such change in this run.")
+        chosen = sorted(set(indices))
+
+    pending = [index for index in chosen if not entries[index].get("undone")]
+    if not pending:
+        raise AlreadyUndone("Already undone.")
 
     root = Path(journal["root"]).resolve()
-    restored = 0
+    restored = recovered = 0
     problems = []
 
-    for entry in reversed(journal["entries"]):
-        if entry["op"] != "move":
-            continue
-        current = (root / entry["to"]).resolve()
-        original = (root / entry["from"]).resolve()
-        if not (_inside(root, current) and _inside(root, original)):
-            problems.append(f"{entry['from']}: outside the folder, skipped")
-            continue
-        if not current.exists():
-            problems.append(f"{entry['to']}: no longer there")
-            continue
-        if original.exists():
-            problems.append(f"{entry['from']}: something else is there now")
-            continue
+    # Newest first, so a chain of changes unwinds in order.
+    for index in reversed(pending):
+        entry = entries[index]
         try:
-            original.parent.mkdir(parents=True, exist_ok=True)
-            shutil.move(str(current), str(original))
-            restored += 1
-        except OSError as error:
-            problems.append(f"{entry['to']}: {error.strerror or error}")
+            if entry["op"] == "move":
+                _undo_move(root, entry)
+                restored += 1
+            else:
+                _undo_delete(root, journal, entry)
+                recovered += 1
+        except UndoProblem as problem:
+            problems.append(f"{entry.get('from') or entry.get('path')}: {problem}")
+            continue
+        entry["undone"] = time.time()
+        _save_journal(journal_id, journal)
 
     for folder in reversed(journal["created_dirs"]):
         try:
@@ -308,8 +379,14 @@ def undo(journal_id: str) -> dict[str, Any]:
         except OSError:
             pass
 
-    deleted = sum(1 for e in journal["entries"] if e["op"] == "delete")
-    journal["undone"] = {"at": time.time(), "restored": restored, "problems": problems}
     _save_journal(journal_id, journal)
-
-    return {"restored": restored, "problems": problems, "in_recycle_bin": deleted}
+    still_deleted = sum(
+        1 for index in pending
+        if entries[index]["op"] == "delete" and not entries[index].get("undone")
+    )
+    return {
+        "restored": restored,
+        "recovered": recovered,
+        "problems": problems,
+        "in_recycle_bin": still_deleted,
+    }

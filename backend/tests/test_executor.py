@@ -186,9 +186,11 @@ def test_undo_restores_moves_and_removes_created_folders(root):
     assert (root / "cv.pdf").exists() and (root / "song.mp3").exists()
     assert not (root / "Documents").exists() and not (root / "Music").exists()
 
-    # The run stays in the history, and can't be undone twice.
+    # The delete wasn't found in the (empty, test) Recycle Bin, so it can
+    # be tried again; the moves can't be undone twice.
     with pytest.raises(AlreadyUndone):
-        undo(done["journal_id"])
+        undo(done["journal_id"], [1, 2])
+    assert undo(done["journal_id"])["in_recycle_bin"] == 1
 
 
 def test_history_lists_runs_newest_first_with_status(root):
@@ -206,10 +208,12 @@ def test_history_lists_runs_newest_first_with_status(root):
     newest, oldest = runs
     assert (oldest["moved"], oldest["deleted"], oldest["freed"]) == (1, 1, 5)
     assert oldest["completed"] and oldest["can_undo"] and not oldest["undone"]
-    assert newest["undone"]["restored"] == 1 and not newest["can_undo"]
+    assert newest["undone"] == 1 and newest["pending"] == 0 and not newest["can_undo"]
 
     details = get_run(first["journal_id"])
-    assert details["entries"][0] == {"op": "delete", "path": "b.pdf", "size": 5}
+    entry = details["entries"][0]
+    assert (entry["op"], entry["path"], entry["size"]) == ("delete", "b.pdf", 5)
+    assert entry["deleted_at"] > 0
 
 
 def test_stopped_run_is_marked_incomplete(root):

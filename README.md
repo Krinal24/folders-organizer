@@ -26,8 +26,10 @@ adjust every suggestion, and only then applies the changes, with undo.
    characters of their text (PDF, DOCX, PPTX, XLSX, TXT), read locally.
 4. **Review**: change any suggestion: move elsewhere, keep, or delete.
 5. **Apply**: every change is re-checked against the disk first. Nothing is
-   overwritten, deletes go to the Recycle Bin, and moves can be undone, then
-   or later from the **History** tab.
+   overwritten and deletes go to the Recycle Bin. Everything can be undone
+   from the **History** tab, the whole run or just the files you pick: moved
+   files go back, and deleted ones are restored from the Recycle Bin (Windows,
+   and the freedesktop Trash on Linux) as long as it hasn't been emptied.
 
 The AI only ever suggests. Moving and deleting is done by plain code that
 validates each operation itself.

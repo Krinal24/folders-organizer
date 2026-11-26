@@ -126,7 +126,7 @@ def run_details(run_id: str):
 @router.post("/undo")
 def undo_run(request: UndoRequest):
     try:
-        return undo(request.journal_id)
+        return undo(request.journal_id, request.entries)
 
     except AlreadyUndone as error:
         raise HTTPException(status_code=409, detail=str(error))
