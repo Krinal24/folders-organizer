@@ -37,6 +37,9 @@ adjust every suggestion, and only then applies the changes, with undo.
 The AI only ever suggests. Moving and deleting is done by plain code that
 validates each operation itself.
 
+### Architecture Diagram
+![alt text](image.png)
+
 The local API only obeys the TidyByte page: each time the backend starts
 it makes a random session key, hands it only to the page (checked by the
 browser's Origin header, on `localhost` only), and refuses any request
